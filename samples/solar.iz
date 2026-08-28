@@ -1,0 +1,19 @@
+#iz
+// Solar tracking in batch: aligns every panel at once.
+
+device sensor = d0;
+
+fn main() {
+    loop {
+        var vertical = 90.0 - sensor.Vertical;
+        var horizontal = sensor.Horizontal;
+
+        all(StructureSolarPanel).Vertical = vertical;
+        all(StructureSolarPanel).Horizontal = horizontal;
+
+        all(StructureSolarPanelDual).Vertical = vertical;
+        all(StructureSolarPanelDual).Horizontal = horizontal;
+
+        sleep(1);
+    }
+}

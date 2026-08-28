@@ -1,0 +1,30 @@
+#iz
+// Moving average of the temperature, to smooth out a noisy reading.
+//
+// It shows why the IZ VM helps: state survives between ticks, so history can
+// be accumulated without spending a register or any stack memory.
+
+device sensor  = d0;
+device display = d1;
+
+const SAMPLES = 20.0;
+
+var average = 0.0;
+var started = false;
+
+fn main() {
+    loop {
+        var current = sensor.Temperature;
+
+        if !started {
+            average = current;
+            started = true;
+        } else {
+            // exponential average: cheap, and no need to keep the whole history
+            average = average + (current - average) / SAMPLES;
+        }
+
+        display.Setting = average;
+        yield;
+    }
+}

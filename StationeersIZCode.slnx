@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IZCode.Mod/IZCode.Mod.csproj" />
+    <Project Path="src/IZLang/IZLang.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IZLang.Tests/IZLang.Tests.csproj" />
+  </Folder>
+</Solution>

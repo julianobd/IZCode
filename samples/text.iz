@@ -1,0 +1,67 @@
+#iz
+// Text at runtime.
+//
+// A str used to be a hash the compiler folded away: "north" was already gone by
+// the time the chip ran, and only its CRC32 was left. Now a str is a real value.
+// It can be built, joined, compared and hashed WHILE the program runs.
+//
+// What that buys here: the devices to talk to are chosen on the spot. The label
+// of a group of vents is assembled inside the loop, and the prefab to drive is
+// picked by comparing text - neither of which a compile time hash could do.
+//
+// To try it in game, label three groups of vents with the Labeller:
+// vent-a, vent-b and vent-c.
+
+device panel = d0;
+
+const PREFIX = "vent-";
+const WINGS = 3;
+
+// The mode this chip runs in. Change the text and everything below follows.
+const MODE = "vent";
+
+// 0, 1 and 2 become "vent-a", "vent-b" and "vent-c".
+//
+// chr() builds a character from its ASCII code, and 97 is 'a'. The '+' joins two
+// str the same way it adds two num - and refuses to mix the two, so a number has
+// to go through text() first.
+fn wing_label(index: num) -> str {
+    return PREFIX + chr(97 + index);
+}
+
+// Text compares with ==, !=, and with < and > in ordinal order. The answer is a
+// prefab NAME: all() hashes it at runtime, exactly like all(StructureActiveVent)
+// hashes its own at compile time.
+fn equipment_of(mode: str) -> str {
+    if mode == "vent" { return "StructureActiveVent"; }
+    return "StructureVolumePump";
+}
+
+fn main() {
+    var pressure: num[WINGS];
+
+    loop {
+        // Read each wing through a label that only exists while this runs.
+        var worst = 0;
+        for i in 0..WINGS {
+            // Averaged over every device wearing that label, 0 when none does.
+            pressure[i] = named(wing_label(i)).Pressure;
+            if pressure[i] > pressure[worst] { worst = i; }
+        }
+
+        // Only the wing under most pressure opens.
+        for i in 0..WINGS {
+            named(wing_label(i)).On = i == worst;
+        }
+
+        // And the equipment the mode asks for follows the same reading.
+        all(equipment_of(MODE)).On = pressure[worst] > 120.0;
+
+        // Building the same text twice costs one slot, not two: the VM keeps a
+        // table of the strings that are alive and hands the same one back. What
+        // nobody points at any more is collected when the table fills up.
+        panel.Setting = pressure[worst];
+
+        sleep(1.0);
+    }
+}

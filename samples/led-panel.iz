@@ -1,0 +1,30 @@
+#iz
+// Status panel in batch: nothing has to be wired to pins d0..d5.
+// Every ConsoleLED5 and every Diode on the network gets the same command.
+//
+// The counter is only there to show a sign of life: while the number moves on
+// the display and the diode blinks, the chip is running.
+
+const DISPLAY = #"StructureConsoleLED5";
+const LED     = #"StructureDiode";
+
+const LIMIT = 100;
+
+fn main() {
+    var counter = 0;
+
+    loop {
+        // 'Setting' is a number - the display shows digits, not text.
+        // all(DISPLAY).Setting = "OK" does not compile: str is not a property value.
+        all(DISPLAY).Setting = counter;
+
+        // A comparison gives a bool, and a bool becomes a num on write: blinks every tick.
+        all(LED).On = counter % 2 == 0;
+
+        counter = (counter + 1) % LIMIT;
+
+        // Hands the tick back to the game. Without this the loop stays correct
+        // (the VM is preemptive), but it burns the chip's whole budget counting.
+        yield;
+    }
+}

@@ -1,0 +1,62 @@
+#iz
+// A real moving average, with a struct and an array.
+//
+// moving-average.iz smooths the reading with an exponential average, which
+// costs one variable and forgets nothing in particular. Here the last WINDOW
+// readings are actually kept, so the average is the average - and the same
+// state is repeated for two tanks without repeating a single line of code.
+//
+// The window is a ring: 'cursor' says which slot is the oldest, and each new
+// reading takes its place. Instead of adding the eight cells back up every
+// tick, the running total drops the value that leaves and adds the one that
+// arrives.
+
+device tankA   = d0;
+device tankB   = d1;
+device display = d2;
+device valve   = d3;
+
+const WINDOW = 8;
+const LIMIT  = 4000.0;
+
+// A struct groups what belongs together. The array lives inside it, so each
+// Gauge has its own eight cells - declaring two of them is enough.
+struct Gauge {
+    total:   num;            // sum of what is in 'samples'
+    cursor:  num;            // next slot to overwrite
+    filled:  num;            // how many are real, before the first lap closes
+    samples: num[WINDOW];    // the length can come from a const
+}
+
+var a: Gauge;                // no initializer: an array or a struct starts zeroed
+var b: Gauge;
+
+// A struct is passed by reference: what this function writes into 'gauge' is
+// what the caller sees afterwards. That is also why it does not hand the Gauge
+// back - a function returns a num, never an array or a struct.
+fn push(gauge: Gauge, value: num) -> num {
+    gauge.total = gauge.total - gauge.samples[gauge.cursor];
+    gauge.samples[gauge.cursor] = value;
+    gauge.total = gauge.total + value;
+
+    // 'len' answers the declared length, at compile time: it costs nothing.
+    gauge.cursor = (gauge.cursor + 1) % len(gauge.samples);
+    if gauge.filled < len(gauge.samples) {
+        gauge.filled = gauge.filled + 1;
+    }
+
+    // Before the window fills up, only what came in counts.
+    return gauge.total / gauge.filled;
+}
+
+fn main() {
+    loop {
+        var averageA = push(a, tankA.Pressure);
+        var averageB = push(b, tankB.Pressure);
+
+        display.Setting = (averageA + averageB) / 2.0;
+        valve.On = averageA > LIMIT || averageB > LIMIT;
+
+        yield;
+    }
+}

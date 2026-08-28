@@ -1,0 +1,25 @@
+#iz
+// Functions, recursion and for - what IC10 does not have.
+
+device display = d0;
+
+fn gcd(a: num, b: num) -> num {
+    if b == 0 { return a; }
+    return gcd(b, a % b);
+}
+
+fn sum_up_to(n: num) -> num {
+    var total = 0;
+    for i in 1..=n {
+        total += i;
+    }
+    return total;
+}
+
+fn main() {
+    display.Setting = gcd(1071, 462);    // 21
+    sleep(2);
+
+    display.Setting = sum_up_to(100);    // 5050
+    sleep(2);
+}

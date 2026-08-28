@@ -1,0 +1,24 @@
+#iz
+// Keeps a room's pressure inside a band.
+//
+// d0 = gas sensor
+// d1 = inlet pump  (runs when the pressure is low)
+// d2 = outlet pump (runs when the pressure is high)
+
+device sensor = d0;
+device inlet  = d1;
+device outlet = d2;
+
+const TARGET = 101.325;
+const MARGIN = 5.0;
+
+fn main() {
+    loop {
+        var p = sensor.Pressure;
+
+        inlet.On  = p < TARGET - MARGIN;
+        outlet.On = p > TARGET + MARGIN;
+
+        yield;
+    }
+}

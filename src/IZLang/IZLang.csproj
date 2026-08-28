@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- netstandard2.0: loads both in the game's Mono and in the tests' .NET. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>IZLang</RootNamespace>
+    <AssemblyName>IZLang</AssemblyName>
+    <!-- The compiler and the VM deliberately reference neither Unity nor Assembly-CSharp:
+         that keeps the whole language testable outside the game. -->
+  </PropertyGroup>
+</Project>

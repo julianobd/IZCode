@@ -1,0 +1,505 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>IZCode</Name>
+  <Author>julianobd</Author>
+  <Version>0.1.0</Version>
+  <ModID>izcode</ModID>
+  <Description>IZCode replaces IC10 with IZ: a structured programming language with types, real functions and recursion, running on its own virtual machine inside the Programmable Chip.
+
+Write '#iz' on the first line of a chip and the mod takes over. Chips without the marker keep working as plain IC10, so nothing you already built changes.
+
+
+=====================================================================
+  WHY IT EXISTS
+=====================================================================
+
+IC10 gives you 128 lines, 16 registers you juggle by hand, and a program that
+restarts from the top on every tick. IZ gives you named variables, functions
+with parameters and return values, and a VM that freezes its complete state
+when the tick budget runs out and resumes at the very next instruction.
+
+That last point is the big one: an infinite loop does not freeze the chip.
+
+    IC10                              IZ
+    ----                              --
+    128 lines                         bounded only by the source size
+    16 registers, managed by hand     named variables, allocated by the compiler
+    jal/ra, one practical level       fn with parameters, returns and recursion
+    restarts every tick               the VM freezes and resumes where it stopped
+    an infinite loop hangs the chip   preempted by budget, the game carries on
+    typos found at runtime            compile errors, with a name suggestion
+    everything is a double            num, bool, str, dev checked at compile time
+    HASH("x"), the text is gone       a real str: joined, compared, hashed at runtime
+    16 loose registers                struct and arrays, in a real heap
+
+
+=====================================================================
+  A COMPLETE PROGRAM
+=====================================================================
+
+    #iz
+    device sensor = d0;
+    device inlet  = d1;
+    device outlet = d2;
+
+    const TARGET = 101.325;
+    const MARGIN = 5.0;
+
+    fn main() {
+        loop {
+            var p = sensor.Pressure;
+
+            inlet.On  = p &lt; TARGET - MARGIN;
+            outlet.On = p &gt; TARGET + MARGIN;
+
+            yield;
+        }
+    }
+
+Execution starts at fn main(). When main returns, the chip stops until it is
+restarted.
+
+
+=====================================================================
+  TYPES
+=====================================================================
+
+    num     64-bit floating point (IEEE-754). The one numeric type.
+    bool    true / false
+    str     ASCII text, immutable, built and compared while the program runs
+    dev     device handle (pin d0-d5)
+    T[N]    array of exactly N values of type T
+    struct  a group of named fields, declared by your program
+
+There are no separate integers: as in IC10, everything is num. Bitwise
+operations convert to a 64-bit integer, operate, and convert back.
+
+num and bool are NOT implicitly interchangeable. 'if x' requires a bool; write
+'if x != 0'. That removes IC10's biggest source of silent bugs. The conversion
+in the other direction IS allowed, so 'pump.On = p &lt; 100' works as written.
+
+
+=====================================================================
+  VARIABLES AND CONSTANTS
+=====================================================================
+
+    var  counter = 0;            // inferred: num, mutable
+    var  active: bool = false;   // explicit annotation
+    const MAX = 101.325;         // constant, folded at compile time
+
+const only accepts expressions computable at compile time, and costs nothing at
+runtime: the value is folded into every use.
+
+Variables declared outside a function are globals and keep their value across
+function calls and across ticks.
+
+
+=====================================================================
+  ARRAYS AND STRUCTS
+=====================================================================
+
+Everything above fits in one number. An array or a struct does not, so it lives
+in the VM heap and the variable holds its address. The whole layout is decided
+at compile time: there is no allocator to call and nothing to collect.
+
+    var samples: num[8];         // eight cells, zeroed
+    var levels  = [10, 20, 30];  // inferred: num[3]
+
+    samples[0] = sensor.Pressure;
+    samples[1] += 5;
+
+The length is part of the type and has to be known at compile time, so it is a
+literal or a const, never a variable. num[3] and num[4] are different types.
+len(a) answers the length and is folded into a constant, so it costs nothing:
+
+    for i in 0..len(samples) { total += samples[i]; }
+
+Dimensions read left to right, as in C: num[2][3] is 2 groups of 3.
+
+A struct groups what belongs together, and is declared outside any function:
+
+    struct Gauge {
+        total:   num;
+        cursor:  num;
+        samples: num[8];
+    }
+
+    var a: Gauge;
+    a.samples[3] = 12;
+
+A field holds the value, not a reference to it, so the layout stays flat and a
+struct cannot contain itself. Two structs with the same fields are still
+different types: what matches is the declaration, not the shape.
+
+Arrays and structs travel by reference, which is why a function fills one in
+instead of handing it back:
+
+    fn fill(xs: num[3]) { xs[1] = 42; }   // the caller sees the 42
+
+The cells belong to the call that declared them and are released when it
+returns. So a recursive call gets its own array, a declaration inside a loop
+hands back the same cells cleared again instead of leaking, and a global keeps
+its values across ticks. For the same reason a function cannot RETURN an array
+or a struct, and an aggregate variable is bound once, at its declaration: both
+rules exist so an address can never outlive the memory behind it.
+
+An index outside the array stops the chip with a runtime error - and when the
+index is a constant, the compiler catches it before you ever press CONFIRM.
+
+
+=====================================================================
+  DEVICES
+=====================================================================
+
+    device pump   = d0;          // housing pin
+    device sensor = d1;
+
+Reading and writing use property access, validated at compile time against the
+game's LogicType table:
+
+    var p = sensor.Pressure;     // error if the property does not exist
+    pump.On = true;              // error if it is read-only
+
+Slots work the same way:
+
+    var q = chute.slot[0].Quantity;
+
+A typo in a property name is caught at compile time, and the message suggests
+the closest real name:
+
+    'Presure' is not a known device property; did you mean 'Pressure'?
+
+
+=====================================================================
+  HASH LITERALS AND BATCH OPERATIONS
+=====================================================================
+
+The housing has only six pins. A batch operation reaches any number of devices
+on the same data network, identified by the prefab hash - no cable needed to
+each one.
+
+    all(StructureWallLight).On = true;              // every device of that prefab
+    named("Corridor Light").On = false;             // any prefab, by label
+    named(StructureVolumePump, "north").On = true;  // prefab AND label
+
+A batch read aggregates by average. If nothing matches the filter, the result
+is 0.
+
+    var average = all(StructureGasSensor).Pressure;
+
+The prefab can be written three ways, all producing the same constant at
+compile time (zero runtime cost):
+
+    all(StructureWallLight)            bare name
+    all(#"StructureWallLight")         hash literal
+    const LIGHT = #"StructureWallLight";
+    all(LIGHT)                         constant
+
+RESOLUTION RULE: a bare identifier counts as a prefab name only if nothing is
+declared with that name. If a const, var or parameter with that name exists,
+its value is used instead.
+
+Prefer the constant when the same prefab appears more than once. A typo in the
+name produces a perfectly valid hash that matches nothing and fails silently;
+declaring it once keeps the mistake in a single place.
+
+The 'named' label written as a literal or a const also becomes a hash at compile
+time, so it can live in a constant and be passed as a parameter:
+
+    const NORTH = #"north";
+
+    fn turn_off(wing: num) {
+        named(StructureVolumePump, wing).On = false;
+    }
+
+A label or a prefab whose text is only known while the program runs is hashed
+then, by the same CRC32 - see TEXT below.
+
+
+=====================================================================
+  TEXT
+=====================================================================
+
+In IC10 a piece of text only ever became a number: HASH("name") at compile time,
+and the text itself was gone. In IZ a str is a value like any other. It goes in
+a variable, a parameter, a return, an array cell or a struct field, and it can
+be built while the program runs.
+
+    var side  = "north";
+    var label = "vent-" + side;        // "vent-north"
+
+    if label == "vent-north" { ... }
+
+    +  and  +=            join two str; they never mix with a num
+    ==  !=                compare the text, not the storage
+    &lt;  &lt;=  &gt;  &gt;=          ordinal order, so "B" comes before "a"
+
+A number gets in through text(x), which is deliberate: silently turning 42 into
+"42" inside a '+' is how a typo becomes a label nobody notices.
+
+A const may hold text, and two of them join at compile time:
+
+    const SIDE  = "north";
+    const LABEL = SIDE + "-wing";      // folded; free at runtime
+
+WHAT TEXT REACHES THE WORLD THROUGH. The game's logic network carries numbers
+only, so a device property and a batch write still refuse a str. What connects
+the two is the hash:
+
+    all("Structure" + kind).On = true;    // hashed while it runs
+    named("vent-" + side).On = true;
+    var h = hash("StructureWallLight");   // same value as #"StructureWallLight"
+
+hash() of a literal or of a str const is folded at compile time, so everything
+that was free before str became a value is still free.
+
+MEMORY. Text built at runtime lives in a table of 512 slots, each up to 256
+characters. The same text always lands on the same slot, so a loop rebuilding
+"tag-" + suffix every tick allocates once and not once per tick; and when the
+table fills, the VM collects what nobody points at any more. A program that
+really does hold more than 512 distinct strings at once stops with a runtime
+error instead of growing without a bound.
+
+    len(s)                  characters
+    hash(s)                 the CRC32 all() and named() use
+    char(s, i)              ASCII code at i, -1 outside the string
+    chr(code)               one character from its code
+    sub(s, start, count)    both bounds clamped
+    find(s, needle)         where it starts, -1 when absent
+    text(x)                 a num as text
+    fixed(x, decimals)      a num as text with a fixed number of decimals
+    parse(s)                text back into a num, nan when it is not one
+
+
+=====================================================================
+  CONTROL FLOW
+=====================================================================
+
+    if cond { ... } else if other { ... } else { ... }
+
+    while cond { ... }
+
+    loop { ... }                 // infinite loop
+
+    for i in 0..10 { ... }       // 0 inclusive, 10 exclusive
+    for i in 0..=10 { ... }      // 10 inclusive
+
+    break;  continue;
+
+There is no goto and there are no jump labels. Parentheses around the condition
+are optional; the braces are mandatory, which removes the dangling-else.
+
+The 'for' range limit is evaluated exactly once, so changing it inside the body
+cannot turn the loop into an accidental infinite one.
+
+
+=====================================================================
+  FUNCTIONS
+=====================================================================
+
+    fn clamp_to(x: num, lo: num, hi: num) -&gt; num {
+        if x &lt; lo { return lo; }
+        if x &gt; hi { return hi; }
+        return x;
+    }
+
+    fn warn() {                  // no return value
+        beacon.On = true;
+    }
+
+A function may call another one declared further down the file. Recursion is
+allowed and bounded by the call depth limit; overflowing it raises a runtime
+error instead of corrupting anything.
+
+    fn gcd(a: num, b: num) -&gt; num {
+        if b == 0 { return a; }
+        return gcd(b, a % b);
+    }
+
+
+=====================================================================
+  OPERATORS
+=====================================================================
+
+From weakest to strongest precedence, all left associative:
+
+    ||                        logical or, short circuit
+    &amp;&amp;                        logical and, short circuit
+    ==  !=
+    &lt;  &lt;=  &gt;  &gt;=
+    |                         bitwise or
+    ^                         bitwise xor
+    &amp;                         bitwise and
+    &lt;&lt;  &gt;&gt;                    shifts
+    +  -
+    *  /  %
+    -x  !x  ~x                prefix
+    a.b   a[i]   f(x)         postfix
+
+'%' takes the sign of the divisor, as in IC10 - not the C# behaviour.
+Division by zero follows IEEE-754 (inf / nan), it is not a runtime error.
+
+Assignment is a STATEMENT, not an expression: 'if (a = b)' does not compile,
+which turns the classic C mistake into a clear message.
+
+Compound assignment works on variables and on device properties alike:
+
+    x += 1;
+    pump.Setting *= 2;
+
+
+=====================================================================
+  TICK CONTROL
+=====================================================================
+
+The chip runs a fixed instruction budget per game tick. There are two ways to
+hand the tick back:
+
+    yield;         gives the tick back immediately; resumes at the next instruction
+    sleep(2);      suspends for N seconds, then resumes
+
+And a third that costs you nothing to write: when the budget runs out, the VM
+preempts itself. 'loop { ... yield; }' is the idiomatic main loop, but a loop
+without yield is simply preempted and keeps running.
+
+
+=====================================================================
+  BUILT-IN FUNCTIONS
+=====================================================================
+
+    abs   ceil  floor  round  trunc  sqrt  exp  log
+    sin   cos   tan    asin   acos   atan  atan2
+    min   max   pow    sign   clamp
+    len(array)                  the declared length of an array
+    rand()                      a value in [0,1)
+    nan()  inf()  isnan(x)
+
+    len   hash  char   chr    sub    find  text  fixed  parse    over text
+
+
+=====================================================================
+  IN-GAME EDITOR TOOLS
+=====================================================================
+
+Writing '#iz' also upgrades the code editor itself.
+
+A REAL CODE AREA. The Stationeers editor is 128 independent text fields, one
+per line - which is why you cannot drag a selection across three lines or press
+Ctrl+A on the whole program. In IZ mode it becomes a single multi-line field
+with a dark background, a line-number gutter and a current-line highlight, and
+all of that becomes native: drag selection, Shift+arrows, double click,
+Ctrl+A/C/X/V, PageUp/PageDown and the mouse wheel.
+
+AUTOMATIC INDENTATION, VS Code style:
+
+    Enter                    repeats the line's indent, goes in one level after '{'
+    Enter between { and }    opens both lines with the caret in between
+    } on a blank line        goes back one level to line up with the opening brace
+    Tab / Shift+Tab          shifts the whole selected block
+
+COMPLETION THAT KNOWS YOUR WIRING. The editor knows which CircuitHousing is
+selected, and the housing knows what is wired to each pin. Typing 'pump.'
+suggests the properties of THAT pump, with the live value alongside, instead of
+all 358 in the game:
+
+    pump.
+          On          rw
+          Setting     rw  = 45
+          Pressure    r   = 101.325
+
+It also completes pins (device x = shows what is on each one), prefab names
+inside all(...) and #"...", slot properties, and the names declared in your own
+program.
+
+    Tab             accept the suggestion
+    Ctrl + arrows   move through the list
+    Ctrl + Space    open the full list
+    Esc             close it
+
+COMPILE ERRORS WHILE YOU TYPE. The same compiler the chip runs on CONFIRM
+compiles what is on screen, a fraction of a second after the last keystroke.
+Problem lines get an underline - red for errors, amber for warnings - and a
+panel at the bottom says what is wrong:
+
+    error line 5     a batch write takes num (or bool), not str
+    warning line 2   const 'LED' was declared and never used
+
+HOVER WITH REAL VALUES. Point at a device variable and see the equipment, its
+label, its hash and the current value of every readable property. Point at a
+property and it tells you whether that device accepts it and whether it is read
+only. Point at a #"..." and it shows the hash, and warns you when no prefab
+with that name exists.
+
+SYNTAX HIGHLIGHTING built for IZ, in the editor and on the Programmable Chip
+Motherboard screen - including #"Prefab", which the IC10 highlighter used to
+swallow as a comment.
+
+
+=====================================================================
+  ERRORS AND WARNINGS
+=====================================================================
+
+Compile errors carry the line, the column and the source snippet, and stop the
+program from ever running. Runtime errors stop the chip and light the housing's
+error LED, exactly like an IC10 exception.
+
+Warnings do not stop anything. Today there is one: a name declared and never
+used, which applies to var, const and device - but not to function parameters
+nor to a for index. Warnings go quiet when the compilation already has an
+error, since a name may look unused only because the code that would use it is
+what fails to compile.
+
+
+=====================================================================
+  CONSOLE COMMANDS
+=====================================================================
+
+    izcode_devices            load or build the device catalog and print a summary
+    izcode_devices rescan     force a fresh scan (needed after installing a mod
+                              that adds devices, since that does not change the
+                              game version)
+
+    izcode_log                          show the current log state
+    izcode_log off                      switch logging off
+    izcode_log level debug              talk more
+    izcode_log areas completion,editor  only these subjects
+    izcode_log path                     where the log and the config file are
+
+Files live in Documents\My Games\Stationeers\izcode\ - the device catalog
+(devices.txt and devices.json), the log (izcode.log) and its configuration
+(log.cfg).
+
+
+=====================================================================
+  REQUIREMENTS
+=====================================================================
+
+IZCode is a C# plugin, and Stationeers does not load C# on its own. Install
+these first:
+
+    1. BepInEx          the loader
+    2. StationeersLaunchPad   which runs on top of BepInEx and starts the mod
+
+With both in place, enable IZCode in the mods menu. To confirm it loaded, look
+for [IZCode] in Player.log - the startup banner comes out even with logging
+switched off.
+
+
+=====================================================================
+  SAFE TO TRY
+=====================================================================
+
+Chips without the '#iz' marker behave exactly as they always did. And because
+'#iz' starts with '#', which the IC10 parser reads as a comment, a chip carrying
+IZ code does not break the game for someone who does not have the mod
+installed.
+
+Example programs ship with the mod, in the samples/ folder: pressure control,
+solar tracking, batch operations by hash and by label, a moving average, an LED
+status panel, a rolling window built from a struct and an array, labels built
+from text while the program runs, recursion, and a full hardsuit systems
+controller.</Description>
+  <Tags>
+    <Tag>Scripting</Tag>
+  </Tags>
+</ModMetadata>

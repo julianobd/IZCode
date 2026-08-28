@@ -1,0 +1,53 @@
+#iz
+// Separating groups of devices of the SAME type, combining hash and label.
+//
+// 'all(hash)' takes every device of a prefab. When the base has two groups of
+// the same equipment - the north wing and the south wing, say - 'named' also
+// filters by the label the player gave the device with the Labeller.
+//
+//   named("north")                 any prefab with that label
+//   named(PUMP, "north")           only the pumps with that label
+//
+// The two-argument form is the safer one: if someone ever labels a sensor
+// "north" as well, the one-argument form would start picking it up too.
+
+device panel = d0;
+
+const PUMP = #"StructureVolumePump";
+const VENT = #"StructureActiveVent";
+
+const TARGET = 101.325;
+
+// Reads a wing's pressure and adjusts only that wing's pumps. The read covers
+// every pump carrying that label at once and gives back their AVERAGE pressure
+// - 0 if the wing has none - so 'current' is a single number no matter how many
+// pumps are installed there.
+fn equalize(wing: num) {
+    var current = named(PUMP, wing).Pressure;
+
+    if current > TARGET {
+        named(PUMP, wing).Setting = 0;
+        named(VENT, wing).On = true;
+    } else {
+        named(PUMP, wing).Setting = TARGET - current;
+        named(VENT, wing).On = false;
+    }
+}
+
+fn main() {
+    // The label also becomes a hash at compile time, so it can be kept in a
+    // constant and passed around as a parameter.
+    const NORTH = #"north";
+    const SOUTH = #"south";
+
+    loop {
+        equalize(NORTH);
+        equalize(SOUTH);
+
+        // The same batch read without a label: the average pressure across
+        // every pump on the network, wing or no wing.
+        panel.Setting = all(PUMP).Pressure;
+
+        sleep(0.5);
+    }
+}

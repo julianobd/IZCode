@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The game runs Mono on the .NET Framework 4.x profile. -->
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>IZCode.Mod</RootNamespace>
+    <AssemblyName>IZCode</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- No SDK companion files: the mod is just the DLL. -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <DebugType>portable</DebugType>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IZLang\IZLang.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- HarmonyX is the variant BepInEx 5 loads; Private=false because the loader
+         already provides the assembly at runtime. -->
+    <PackageReference Include="HarmonyX" Version="2.10.2" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!-- Game assemblies. Never copied to the output: the game already has them. -->
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(StationeersManaged)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(StationeersManaged)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(StationeersManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(StationeersManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Code editor UI: the game draws with TextMeshPro on top of uGUI. -->
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(StationeersManaged)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(StationeersManaged)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(StationeersManaged)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(StationeersManaged)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(StationeersManaged)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(StationeersManaged)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CheckStationeersInstall" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(StationeersManaged)\Assembly-CSharp.dll')"
+           Text="Could not find Stationeers at '$(StationeersDir)'. Pass the right path: dotnet build -p:StationeersDir=&quot;D:\Steam\steamapps\common\Stationeers&quot;" />
+  </Target>
+
+</Project>

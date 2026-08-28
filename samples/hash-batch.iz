@@ -1,0 +1,53 @@
+#iz
+// Referring to devices by the prefab HASH, without spending a housing pin.
+//
+// The housing has only 6 pins (d0..d5). A batch operation reaches any number
+// of devices on the same data network, identified by the hash of the prefab
+// name - no data cable has to be run to each one.
+//
+// There are three ways to write the hash, and they all produce the SAME
+// constant, computed at compile time (zero runtime cost):
+//
+//   all(StructureWallLight)        bare name, straight up
+//   all(#"StructureWallLight")     hash literal, explicit
+//   all(LIGHT)                     constant declared with #"..."
+//
+// Prefer the constant when the same prefab shows up several times: a typo in
+// the name becomes a valid hash that matches nothing, and fails silently.
+// Declaring it once keeps the mistake in a single place.
+//
+// A batch WRITE and a batch READ are not symmetric. The write reaches every
+// matching device; the read has to collapse them into one number, and IZ
+// aggregates by AVERAGE - IC10's 'lb' in Average mode:
+//
+//   all(StructureGasSensor).Pressure     the average of every gas sensor
+//
+// When nothing matches the filter the read gives 0, instead of stopping the
+// chip. There is no sum, minimum or maximum form: to add readings up, read
+// the devices one by one through their pins.
+
+device sensor = d0;
+
+// One name per prefab. The exact name is written exactly once.
+const LIGHT       = #"StructureWallLight";
+const ALARM       = #"StructureFlashingLight";
+const VENTILATION = #"StructureActiveVent";
+
+const MINIMUM_PRESSURE = 20.0;
+
+fn main() {
+    loop {
+        var p = sensor.Pressure;
+        var emergency = p < MINIMUM_PRESSURE;
+
+        // Batch write: reaches every device of that prefab at once.
+        all(ALARM).On = emergency;
+        all(LIGHT).On = !emergency;
+
+        if emergency {
+            all(VENTILATION).On = false;
+        }
+
+        yield;
+    }
+}

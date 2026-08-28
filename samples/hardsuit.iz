@@ -1,0 +1,111 @@
+#iz
+// Hardsuit systems control.
+//
+// Port of SemlerPDX's "Hardsuit Systems Control Script v6" (IC10) to IZ.
+//
+// What it does:
+//   * the helmet can never be locked open - locking forces it shut;
+//   * a lock overrides automatic opening until it is unlocked;
+//   * the helmet opens by itself when the outside air is breathable, and
+//     closes again as soon as it leaves the margins;
+//   * air release and filtration run only while the helmet is closed;
+//   * the AC follows the suit's own temperature setting plus an offset, with
+//     hysteresis so it does not chatter around the target.
+//
+// Wiring note: IZ v0.1 addresses the six housing pins (d0..d5) and has no
+// equivalent of IC10's 'db' (the housing itself), so the suit is referenced
+// through a pin here rather than as self.
+
+device suit   = d0;
+device helmet = d1;
+
+// ---- user customization ------------------------------------------------
+
+// Outside temperature band that allows the helmet to open, in kelvin.
+const TEMP_EXTERNAL_MAX = 311.15;      // 38 C
+const TEMP_EXTERNAL_MIN = 289.15;      // 16 C
+
+// Outside pressure band that allows the helmet to open, in kPa.
+const PRESSURE_EXTERNAL_MAX = 110.0;
+const PRESSURE_EXTERNAL_MIN = 69.0;
+
+// How far the suit temperature may drift from the setting before the AC kicks
+// in, and how close it has to get before the AC stops again.
+const OFFSET_TEMP_MAX = 15.0;          // above the setting: start cooling
+const OFFSET_TEMP_MIN = 10.0;          // below the setting: start heating
+const OFFSET_TEMP_LOW = 1.0;           // buffer, so heating stops just shy of it
+
+// ---- nothing below is meant to be edited -------------------------------
+
+// Everything off and the helmet shut. Also the state the suit is put into
+// whenever someone tries to lock the helmet open.
+fn shut_down() {
+    suit.AirRelease = false;
+    suit.Filtration = false;
+    suit.On = false;                   // AC off
+    helmet.Open = false;
+}
+
+/// Should the AC be running right now?
+///
+/// The thresholds move depending on whether the AC is already on: that is the
+/// hysteresis. Idle, it waits for the temperature to drift a whole offset past
+/// the setting; running, it keeps going until it is back at the setting
+/// (cooling) or within the buffer of it (heating). Without that gap the unit
+/// would switch on and off every tick around the target.
+fn climate_needed(can_open: bool) -> bool {
+    // Never run the AC with the helmet open: it would be conditioning the world.
+    if can_open { return false; }
+
+    var target = suit.TemperatureSetting;
+    var current = suit.Temperature;
+    var running = suit.On != 0;
+
+    var upper = target + OFFSET_TEMP_MAX;
+    var lower = target - OFFSET_TEMP_MIN;
+
+    if running {
+        upper = target;
+        lower = target - OFFSET_TEMP_LOW;
+    }
+
+    return current > upper || current < lower;
+}
+
+fn main() {
+    shut_down();
+
+    loop {
+        var locked = helmet.Lock != 0;
+
+        // The helmet cannot be locked open. Someone flipping the lock while it
+        // is open gets it closed instead, along with a full reset.
+        if helmet.Open != 0 && locked {
+            shut_down();
+            yield;
+            continue;
+        }
+
+        var pressure = suit.PressureExternal;
+        var temperature = suit.TemperatureExternal;
+
+        var pressure_ok = pressure <= PRESSURE_EXTERNAL_MAX
+                       && pressure >= PRESSURE_EXTERNAL_MIN;
+
+        var temperature_ok = temperature <= TEMP_EXTERNAL_MAX
+                          && temperature >= TEMP_EXTERNAL_MIN;
+
+        // A lock always wins over the automatic opening.
+        var can_open = pressure_ok && temperature_ok && !locked;
+
+        helmet.Open = can_open;
+
+        // Air and filtration only make sense with the helmet shut.
+        suit.AirRelease = !can_open;
+        suit.Filtration = !can_open;
+
+        suit.On = climate_needed(can_open);
+
+        yield;
+    }
+}
