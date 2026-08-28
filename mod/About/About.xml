@@ -10,17 +10,17 @@ Write '#iz' on the first line of a chip and the mod takes over. Chips without th
 
 ===== WHY IT EXISTS =================================================
 
-    IC10                              IZ
-    ----                              --
-    128 lines                         bounded only by the source size
-    16 registers, managed by hand     named variables, given by the compiler
-    jal/ra, one practical level       fn with parameters, returns, recursion
-    restarts every tick               freezes and resumes where it stopped
-    an infinite loop hangs the chip   preempted by budget, the game carries on
-    typos found at runtime            compile errors, with a name suggestion
-    everything is a double            num, bool, str, dev checked at compile time
-    HASH("x"), the text is gone       a real str: joined, compared, hashed live
-    16 loose registers                struct and arrays, in a real heap
+    IC10 |                              IZ
+    ---- |                              --
+    128 lines |                         bounded only by the source size
+    16 registers, managed by hand |     named variables, given by the compiler
+    jal/ra, one practical level |       fn with parameters, returns, recursion
+    restarts every tick |               freezes and resumes where it stopped
+    an infinite loop hangs the chip |   preempted by budget, the game carries on
+    typos found at runtime |            compile errors, with a name suggestion
+    everything is a double |            num, bool, str, dev checked at compile time
+    HASH("x"), the text is gone |       a real str: joined, compared, hashed live
+    16 loose registers |                struct and arrays, in a real heap
 
 ===== A COMPLETE PROGRAM ============================================
 
