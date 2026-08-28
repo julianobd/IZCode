@@ -15,7 +15,7 @@ namespace IZLang.Binding
     /// (globals, devices and function signatures), so a function can call another
     /// one declared further down the file.
     /// </summary>
-    public sealed class Compiler
+    public sealed partial class Compiler
     {
         private const int MaxGlobals = 256;
         private const int MaxLocalsPerFunction = 128;
@@ -382,6 +382,31 @@ namespace IZLang.Binding
                     return IZType.ArrayOf(element, length);
                 }
 
+                case ListTypeSyntax list:
+                {
+                    var inner = ResolveTypeAnnotation(list.Inner, IZType.Error);
+
+                    if (inner.Kind != IZTypeKind.Array)
+                    {
+                        _diagnostics.Report(IZErrorCode.InvalidArrayLength, list.Span,
+                            "a list is declared with the room it has: 'list num[8]'");
+                        return IZType.ListOf(IZType.Num, 1);
+                    }
+
+                    // A struct is fine - it is one run of cells like any other item.
+                    // An array or another list is not: the item would carry a length
+                    // of its own, and the count already answers that question once.
+                    var item = inner.ElementType!;
+                    if (item.Kind == IZTypeKind.Array || item.Kind == IZTypeKind.List)
+                    {
+                        _diagnostics.Report(IZErrorCode.TypeMismatch, list.Span,
+                            "a list holds num, bool, str or a struct, not " + item.Display());
+                        item = IZType.Num;
+                    }
+
+                    return IZType.ListOf(item, inner.Length);
+                }
+
                 case NamedTypeSyntax named:
                     switch (named.Token.Kind)
                     {
@@ -434,8 +459,8 @@ namespace IZLang.Binding
 
             // The entry frame is the one that never unwinds, so the global arrays and
             // structs live in it. Its size is only known now that they are all emitted.
-            _functions[0] = new FunctionInfo("<entry>", entryPoint, 0, 0,
-                returnsValue: false, heapSize: _function.MaxHeapOffset);
+            _functions[0] = new FunctionInfo("<entry>", entryPoint, 0,
+                _function.MaxLocalSlot, returnsValue: false, heapSize: _function.MaxHeapOffset);
             _function = null;
         }
 
@@ -721,6 +746,29 @@ namespace IZLang.Binding
                 return;
             }
 
+            // A query settles what it hands back only once its lambdas are
+            // compiled, so there is nothing to resolve in advance: emit it, and let
+            // the value name the type of the variable.
+            if (declaration.DeclaredType == null && declaration.Initializer != null &&
+                IsQueryCall(declaration.Initializer))
+            {
+                var queryType = EmitExpression(declaration.Initializer);
+
+                if (queryType == IZType.Void)
+                {
+                    _diagnostics.Report(IZErrorCode.TypeMismatch, declaration.Initializer.Span,
+                        "this gives nothing back, so there is nothing for '" +
+                        declaration.Name + "' to hold");
+                    Emit(OpCode.PushZero, 0, 0, LineOf(declaration.Span));
+                    queryType = IZType.Error;
+                }
+
+                int querySlot = DeclareVariable(declaration, queryType, isGlobal);
+                Emit(isGlobal ? OpCode.StoreGlobal : OpCode.StoreLocal, querySlot, 0,
+                     LineOf(declaration.Span));
+                return;
+            }
+
             var declaredType = ResolveDeclaredType(declaration);
 
             if (declaredType.IsAggregate)
@@ -820,7 +868,9 @@ namespace IZLang.Binding
                 case IndexExpression index:
                 {
                     var target = TypeOfInitializer(index.Target);
-                    return target.Kind == IZTypeKind.Array ? target.ElementType! : IZType.Num;
+                    return target.Kind == IZTypeKind.Array || target.Kind == IZTypeKind.List
+                        ? target.ElementType!
+                        : IZType.Num;
                 }
 
                 case MemberExpression member:
@@ -952,6 +1002,37 @@ namespace IZLang.Binding
                 return;
             }
 
+            // A list starts with what the literal holds and keeps the rest as room:
+            // 'var xs: list num[4] = [1, 2, 3];' is three items in four cells.
+            if (target.Kind == IZTypeKind.List && value is ArrayLiteralExpression items)
+            {
+                if (items.Elements.Count > target.Length)
+                {
+                    _diagnostics.Report(IZErrorCode.TypeMismatch, items.Span,
+                        "this list has room for " + target.Length + " item(s), and the " +
+                        "literal has " + items.Elements.Count);
+                }
+
+                var item = target.ElementType!;
+                int used = Math.Min(items.Elements.Count, target.Length);
+
+                Emit(OpCode.Dup, 0, 0, line);
+                EmitConstant(used, line);
+                Emit(OpCode.StoreHeap, 0, 0, line);          // the count comes first
+
+                for (int i = 0; i < used; i++)
+                {
+                    Emit(OpCode.Dup, 0, 0, line);
+                    Emit(OpCode.FieldRef, 1, 0, line);
+                    EmitConstant(i, line);
+                    Emit(OpCode.IndexRef, item.Size, target.Length, line);
+                    EmitFill(items.Elements[i], item, line);
+                }
+
+                Emit(OpCode.Pop, 0, 0, line);
+                return;
+            }
+
             if (value is ArrayLiteralExpression stray)
             {
                 _diagnostics.Report(IZErrorCode.TypeMismatch, stray.Span,
@@ -1016,7 +1097,7 @@ namespace IZLang.Binding
                         _diagnostics.Report(IZErrorCode.InvalidAssignmentTarget, name.Span,
                             "'" + name.Name + "' is " + variable.Type.Display() +
                             " and cannot be assigned as a whole; assign to its " +
-                            (variable.Type.Kind == IZTypeKind.Array ? "elements" : "fields"));
+                            PartsOf(variable.Type));
                         EmitExpression(assignment.Value);
                         Emit(OpCode.Pop, 0, 0, line);
                         return;
@@ -1121,7 +1202,7 @@ namespace IZLang.Binding
             }
 
             // p.x = 1 - a struct field.
-            EmitHeapAssignment(EmitFieldAddress(member), assignment, line);
+            EmitHeapAssignment(EmitFieldAddress(member, forWrite: true), assignment, line);
         }
 
         /// <summary>
@@ -1134,7 +1215,7 @@ namespace IZLang.Binding
             {
                 _diagnostics.Report(IZErrorCode.InvalidAssignmentTarget, assignment.Target.Span,
                     "this is " + targetType.Display() + " and cannot be assigned as a whole; " +
-                    "assign to its " + (targetType.Kind == IZTypeKind.Array ? "elements" : "fields"));
+                    "assign to its " + PartsOf(targetType));
                 Emit(OpCode.Pop, 0, 0, line);
                 EmitExpression(assignment.Value);
                 Emit(OpCode.Pop, 0, 0, line);
@@ -1432,6 +1513,12 @@ namespace IZLang.Binding
                         "a batch selector needs a property: 'all(X).On'");
                     Emit(OpCode.PushZero, 0, 0, LineOf(selector.Span));
                     return IZType.Error;
+                case LambdaExpression lambda:
+                    _diagnostics.Report(IZErrorCode.TypeMismatch, lambda.Span,
+                        "'=>' only writes the body of a query method, like " +
+                        "'xs.where(x => x > 0)'; it is not a value on its own");
+                    Emit(OpCode.PushZero, 0, 0, LineOf(lambda.Span));
+                    return IZType.Error;
                 default:
                     Emit(OpCode.PushZero, 0, 0, LineOf(expression.Span));
                     return IZType.Error;
@@ -1719,10 +1806,16 @@ namespace IZLang.Binding
         {
             int line = LineOf(call.Span);
 
+            // xs.where(...), xs.add(...): a method on a list, compiled into a loop
+            // over its cells. It is the only call whose callee is not a plain name.
+            if (TryEmitQueryCall(call, out var queryResult)) return queryResult;
+
             if (!(call.Callee is NameExpression callee))
             {
                 _diagnostics.Report(IZErrorCode.NotCallable, call.Callee.Span,
-                    "a function can only be called by name");
+                    call.Callee is MemberExpression method
+                        ? "'" + method.MemberName + "' is not a method; a function is called by name"
+                        : "a function can only be called by name");
                 Emit(OpCode.PushZero, 0, 0, line);
                 return IZType.Error;
             }
@@ -1849,16 +1942,19 @@ namespace IZLang.Binding
             // whatever the call did, even though the length itself is a constant.
             Emit(OpCode.Pop, 0, 0, line);
 
-            if (argumentType.Kind != IZTypeKind.Array)
+            if (argumentType.Kind != IZTypeKind.Array && argumentType.Kind != IZTypeKind.List)
             {
                 if (argumentType != IZType.Error)
                 {
                     _diagnostics.Report(IZErrorCode.TypeMismatch, call.Arguments[0].Span,
-                        "'len' takes an array or a str, not " + argumentType.Display());
+                        "'len' takes an array, a list or a str, not " + argumentType.Display());
                 }
                 Emit(OpCode.PushZero, 0, 0, line);
                 return IZType.Num;
             }
+
+            // The length of a list is the room it has. How much of it is in use is
+            // 'count', and only the running program knows that one.
 
             EmitConstant(argumentType.Length, line);
             return IZType.Num;
@@ -1941,17 +2037,39 @@ namespace IZLang.Binding
         /// Emits the address of a struct field, leaving it on the stack.
         /// Returns the type stored there, or Error when the target is not a struct.
         /// </summary>
-        private IZType EmitFieldAddress(MemberExpression member)
+        private IZType EmitFieldAddress(MemberExpression member, bool forWrite = false)
         {
             int line = LineOf(member.Span);
             var targetType = EmitExpression(member.Target);
+
+            // A list opens with its count, so the address of the list is already the
+            // address of that cell and there is nothing to offset.
+            if (targetType.Kind == IZTypeKind.List)
+            {
+                if (!string.Equals(member.MemberName, "count", StringComparison.Ordinal))
+                {
+                    _diagnostics.Report(IZErrorCode.UnknownField, member.MemberToken.Span,
+                        "a list has 'count'; its items are read with brackets, and a " +
+                        "method is called with parentheses");
+                    return IZType.Error;
+                }
+
+                if (forWrite)
+                {
+                    _diagnostics.Report(IZErrorCode.InvalidAssignmentTarget, member.MemberToken.Span,
+                        "'count' says how many items the list holds; it changes through " +
+                        "'add', 'removeAt' and 'clear'");
+                }
+
+                return IZType.Num;
+            }
 
             if (targetType.Kind != IZTypeKind.Struct)
             {
                 if (targetType != IZType.Error)
                 {
                     _diagnostics.Report(IZErrorCode.NotADevice, member.Target.Span,
-                        "'.' works on a device, a batch selector or a struct, not on " +
+                        "'.' works on a device, a batch selector, a struct or a list, not on " +
                         targetType.Display());
                 }
                 return IZType.Error;
@@ -1969,6 +2087,17 @@ namespace IZLang.Binding
 
             if (field.Offset != 0) Emit(OpCode.FieldRef, field.Offset, 0, line);
             return field.Type;
+        }
+
+        /// <summary>What the pieces of an aggregate are called, for the messages.</summary>
+        private static string PartsOf(IZType type)
+        {
+            switch (type.Kind)
+            {
+                case IZTypeKind.Array: return "elements";
+                case IZTypeKind.List: return "items, through 'add' and the index";
+                default: return "fields";
+            }
         }
 
         private static string SuggestFieldName(StructSymbol structSymbol, string name)
@@ -1998,12 +2127,25 @@ namespace IZLang.Binding
             int line = LineOf(index.Span);
             var targetType = EmitExpression(index.Target);
 
+            // A list is bounded by its count, which only exists while it runs: there
+            // is no constant to check here, and the check moves into the instruction.
+            if (targetType.Kind == IZTypeKind.List)
+            {
+                var listIndexType = EmitExpression(index.Index);
+                RequireNumeric(listIndexType, index.Index.Span, "a list index");
+
+                var listElement = targetType.ElementType!;
+                Emit(OpCode.ListIndexRef, listElement.Size, targetType.Length, line);
+                return listElement;
+            }
+
             if (targetType.Kind != IZTypeKind.Array)
             {
                 if (targetType != IZType.Error)
                 {
                     _diagnostics.Report(IZErrorCode.TypeMismatch, index.Target.Span,
-                        "only an array can be indexed, and this is " + targetType.Display());
+                        "only an array or a list can be indexed, and this is " +
+                        targetType.Display());
                 }
                 return IZType.Error;
             }

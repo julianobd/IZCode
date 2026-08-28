@@ -37,6 +37,7 @@ namespace IZLang.Lexing
                 ["bool"] = TokenKind.KwBool,
                 ["str"] = TokenKind.KwStr,
                 ["dev"] = TokenKind.KwDev,
+                ["list"] = TokenKind.KwList,
                 ["all"] = TokenKind.KwAll,
                 ["named"] = TokenKind.KwNamed,
             };
@@ -361,7 +362,10 @@ namespace IZLang.Lexing
                 case '&': return n == '&' ? Pair(TokenKind.AmpAmp) : Single(TokenKind.Amp);
                 case '|': return n == '|' ? Pair(TokenKind.PipePipe) : Single(TokenKind.Pipe);
                 case '!': return n == '=' ? Pair(TokenKind.BangEquals) : Single(TokenKind.Bang);
-                case '=': return n == '=' ? Pair(TokenKind.EqualsEquals) : Single(TokenKind.Equals);
+                case '=':
+                    if (n == '=') return Pair(TokenKind.EqualsEquals);
+                    if (n == '>') return Pair(TokenKind.FatArrow);
+                    return Single(TokenKind.Equals);
 
                 case '<':
                     if (n == '<') return Pair(TokenKind.LessLess);

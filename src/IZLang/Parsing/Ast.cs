@@ -138,6 +138,27 @@ namespace IZLang.Parsing
         }
     }
 
+    /// <summary>
+    /// x =&gt; expression - the body of a query method.
+    ///
+    /// It is not a value: there are no function pointers in IZ. It only ever appears
+    /// as the argument of a query method, and the compiler inlines it into the loop
+    /// it generates, which is why it costs no call.
+    /// </summary>
+    public sealed class LambdaExpression : ExpressionSyntax
+    {
+        public Token ParameterToken { get; }
+        public string ParameterName => ParameterToken.Text;
+        public ExpressionSyntax Body { get; }
+
+        public LambdaExpression(Token parameter, ExpressionSyntax body, SourceSpan span)
+        {
+            ParameterToken = parameter;
+            Body = body;
+            Span = span;
+        }
+    }
+
     public enum BatchSelectorKind { All, Named }
 
     /// <summary>
@@ -202,6 +223,21 @@ namespace IZLang.Parsing
         {
             ElementType = elementType;
             Length = length;
+            Span = span;
+        }
+    }
+
+    /// <summary>
+    /// A list type: 'list num[8]'. The inner type carries the capacity, which is
+    /// why what follows 'list' is always an array annotation.
+    /// </summary>
+    public sealed class ListTypeSyntax : TypeSyntax
+    {
+        public TypeSyntax Inner { get; }
+
+        public ListTypeSyntax(TypeSyntax inner, SourceSpan span)
+        {
+            Inner = inner;
             Span = span;
         }
     }

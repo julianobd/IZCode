@@ -181,6 +181,16 @@ namespace IZLang.Parsing
         {
             TypeSyntax type;
 
+            // 'list num[8]': the brackets that follow belong to the list, and are
+            // its capacity. There is no array of lists, which is what keeps this
+            // unambiguous.
+            if (Check(TokenKind.KwList))
+            {
+                var listKeyword = Advance();
+                var inner = ParseType();
+                return new ListTypeSyntax(inner, listKeyword.Span.To(inner.Span));
+            }
+
             switch (Current.Kind)
             {
                 case TokenKind.KwNum:
@@ -192,7 +202,8 @@ namespace IZLang.Parsing
                     break;
                 default:
                     _diagnostics.Report(IZErrorCode.ExpectedToken, Current.Span,
-                        "expected a type ('num', 'bool', 'str', 'dev' or a struct name), found " + Describe(Current));
+                        "expected a type ('num', 'bool', 'str', 'dev', 'list' or a struct name), found " +
+                        Describe(Current));
                     return new NamedTypeSyntax(new Token(TokenKind.KwNum, new SourceSpan(Current.Span.Start, 0), "num"));
             }
 
@@ -592,7 +603,7 @@ namespace IZLang.Parsing
             {
                 if (Match(TokenKind.Dot))
                 {
-                    var member = Expect(TokenKind.Identifier);
+                    var member = ParseMemberName();
                     expression = new MemberExpression(expression, member);
                 }
                 else if (Check(TokenKind.LBracket))
@@ -608,7 +619,7 @@ namespace IZLang.Parsing
                     var arguments = new List<ExpressionSyntax>();
                     if (!Check(TokenKind.RParen))
                     {
-                        do { arguments.Add(ParseExpression()); }
+                        do { arguments.Add(ParseArgument()); }
                         while (Match(TokenKind.Comma));
                     }
                     var close = Expect(TokenKind.RParen);
@@ -621,6 +632,42 @@ namespace IZLang.Parsing
             }
 
             return expression;
+        }
+
+        /// <summary>
+        /// The name after a '.'.
+        ///
+        /// A couple of keywords double as method names on a list ('xs.all(...)'),
+        /// and after a dot there is nothing else they could mean.
+        /// </summary>
+        private Token ParseMemberName()
+        {
+            switch (Current.Kind)
+            {
+                case TokenKind.KwAll:
+                case TokenKind.KwNamed:
+                case TokenKind.KwIn:
+                    return Advance();
+                default:
+                    return Expect(TokenKind.Identifier);
+            }
+        }
+
+        /// <summary>
+        /// One argument of a call. Only here can a lambda appear: 'x =&gt; x.temp &gt; 30'
+        /// is the body of a query method, never a value on its own.
+        /// </summary>
+        private ExpressionSyntax ParseArgument()
+        {
+            if (Check(TokenKind.Identifier) && Peek(1).Kind == TokenKind.FatArrow)
+            {
+                var parameter = Advance();
+                Advance();                                 // '=>'
+                var body = ParseExpression();
+                return new LambdaExpression(parameter, body, parameter.Span.To(body.Span));
+            }
+
+            return ParseExpression();
         }
 
         private ExpressionSyntax ParsePrimary()

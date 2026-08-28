@@ -146,5 +146,24 @@ namespace IZLang.Vm
         /// built on this one: '==' is a compare against zero, and so is '&lt;'.
         /// </summary>
         StrCompare,
+
+        // ---- lists ----
+        // A list is a run of cells opening with its count, which is the one thing
+        // the heap opcodes above could not already express.
+
+        /// <summary>
+        /// Pops the index and the address of a list, and pushes the address of the
+        /// element: list + 1 + index * A. The index is checked against the count in
+        /// the list's first cell, not against the capacity in B - which is what
+        /// makes reading past the end an error instead of stale capacity.
+        /// </summary>
+        ListIndexRef,
+        /// <summary>Pops the source address and then the destination, and copies A cells.</summary>
+        CopyHeap,
+        /// <summary>Pops an address and zeroes A cells from it.</summary>
+        ClearHeap,
+
+        /// <summary>Stops the program with the message in Strings[A].</summary>
+        Trap,
     }
 }

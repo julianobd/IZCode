@@ -67,6 +67,8 @@ namespace IZLang.Vm
         HeapOverflow,
         IndexOutOfRange,
         StringOverflow,
+        /// <summary>first() or last() over a query that matched nothing.</summary>
+        EmptySequence,
     }
 
     public sealed class RuntimeError
@@ -503,6 +505,63 @@ namespace IZLang.Vm
                             return Fail(RuntimeErrorKind.IndexOutOfRange, "write outside the heap");
                         _heap[address] = value;
                         break;
+                    }
+
+                    // ---- lists ----
+                    case OpCode.ListIndexRef:
+                    {
+                        if (_stackTop < 2) return Underflow();
+                        double rawIndex = _stack[--_stackTop];
+                        int listAddress = (int)_stack[_stackTop - 1];
+
+                        if ((uint)listAddress >= (uint)_heap.Length)
+                            return Fail(RuntimeErrorKind.IndexOutOfRange, "read outside the heap");
+
+                        double count = _heap[listAddress];
+                        double index = Math.Truncate(rawIndex);
+
+                        // The count is the bound, not the capacity: the cells past it
+                        // are room, not content.
+                        if (!(index >= 0.0) || index >= count)
+                            return Fail(RuntimeErrorKind.IndexOutOfRange,
+                                "index " + rawIndex.ToString(CultureInfo.InvariantCulture) +
+                                " is outside the list, which holds " +
+                                count.ToString(CultureInfo.InvariantCulture));
+
+                        _stack[_stackTop - 1] = listAddress + 1 + index * instruction.A;
+                        break;
+                    }
+                    case OpCode.CopyHeap:
+                    {
+                        if (_stackTop < 2) return Underflow();
+                        int source = (int)_stack[--_stackTop];
+                        int destination = (int)_stack[--_stackTop];
+
+                        if ((uint)source > (uint)(_heap.Length - instruction.A) ||
+                            (uint)destination > (uint)(_heap.Length - instruction.A))
+                            return Fail(RuntimeErrorKind.IndexOutOfRange, "copy outside the heap");
+
+                        Array.Copy(_heap, source, _heap, destination, instruction.A);
+                        break;
+                    }
+                    case OpCode.ClearHeap:
+                    {
+                        if (_stackTop <= 0) return Underflow();
+                        int target = (int)_stack[--_stackTop];
+
+                        if ((uint)target > (uint)(_heap.Length - instruction.A))
+                            return Fail(RuntimeErrorKind.IndexOutOfRange, "clear outside the heap");
+
+                        Array.Clear(_heap, target, instruction.A);
+                        break;
+                    }
+                    case OpCode.Trap:
+                    {
+                        var messages = _program.Strings;
+                        return Fail(RuntimeErrorKind.EmptySequence,
+                            (uint)instruction.A < (uint)messages.Length
+                                ? messages[instruction.A]
+                                : "the program stopped");
                     }
 
                     // ---- strings ----

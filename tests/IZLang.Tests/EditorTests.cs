@@ -76,6 +76,62 @@ namespace IZLang.Tests
         // ==================================================================
 
         [Fact]
+        public void AfterADotOnAListItSuggestsTheQueryMethods()
+        {
+            var result = Complete("fn main() { var xs: list num[8]; xs.| }");
+
+            Assert.Equal(CompletionContext.ListMethod, result.Context);
+
+            var labels = Labels(result);
+            Assert.Contains("where", labels);
+            Assert.Contains("sum", labels);
+            Assert.Contains("orderBy", labels);
+            Assert.Contains("add", labels);          // only a list can grow
+            Assert.Contains("count", labels);
+            Assert.DoesNotContain("Setting", labels);
+        }
+
+        [Fact]
+        public void AnArrayIsOfferedTheMethodsThatDoNotChangeIt()
+        {
+            var result = Complete("fn main() { var a: num[4]; a.| }");
+
+            Assert.Equal(CompletionContext.ListMethod, result.Context);
+
+            var labels = Labels(result);
+            Assert.Contains("avg", labels);
+            Assert.DoesNotContain("add", labels);
+            Assert.DoesNotContain("clear", labels);
+        }
+
+        [Fact]
+        public void AfterAQueryMethodItSuggestsTheNextOne()
+        {
+            var result = Complete(
+                "fn main() { var xs: list num[8]; var n = xs.where(x => x > 1).| }");
+
+            Assert.Equal(CompletionContext.ListMethod, result.Context);
+
+            var labels = Labels(result);
+            Assert.Contains("sum", labels);
+            Assert.DoesNotContain("add", labels);    // the query is not the list
+        }
+
+        [Fact]
+        public void AnItemOfAListOfStructsStillSuggestsItsFields()
+        {
+            var result = Complete(
+                "struct Job { id: num; done: bool; } " +
+                "fn main() { var jobs: list Job[4]; jobs[0].| }");
+
+            Assert.Equal(CompletionContext.StructField, result.Context);
+
+            var labels = Labels(result);
+            Assert.Contains("id", labels);
+            Assert.Contains("done", labels);
+        }
+
+        [Fact]
         public void AfterDeviceEqualsItSuggestsPins()
         {
             var result = Complete("device pump = |");

@@ -376,6 +376,7 @@ namespace IZLang.Editor
                 case TokenKind.KwBreak: return "leaves the current loop";
                 case TokenKind.KwContinue: return "skips to the next turn of the loop";
                 case TokenKind.KwReturn: return "returns from the function";
+                case TokenKind.KwList: return "a list: an array plus how much of it is in use, 'list num[8]'";
                 case TokenKind.KwAll: return "selects every device of a prefab";
                 case TokenKind.KwNamed: return "selects devices by label: named(Prefab, \"label\")";
                 default: return null;

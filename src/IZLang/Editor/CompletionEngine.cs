@@ -21,6 +21,8 @@ namespace IZLang.Editor
         Property,
         SlotProperty,
         Prefab,
+        /// <summary>A query method over a list: where, sum, orderBy...</summary>
+        Method,
     }
 
     /// <summary>A suggestion. <see cref="ReplaceSpan"/> says what to replace in the text when accepted.</summary>
@@ -82,6 +84,8 @@ namespace IZLang.Editor
         PrefabString,
         /// <summary>After a struct value and a '.': the fields of that struct.</summary>
         StructField,
+        /// <summary>After a list, an array or a query and a '.': the query methods.</summary>
+        ListMethod,
     }
 
     /// <summary>
@@ -110,8 +114,50 @@ namespace IZLang.Editor
             "if", "else", "while", "loop", "for", "in",
             "break", "continue", "yield",
             "true", "false",
-            "num", "bool", "str", "dev",
+            "num", "bool", "str", "dev", "list",
             "all", "named", "struct", "len",
+        };
+
+        /// <summary>
+        /// What can follow a list and a dot. The order is the one they are useful in,
+        /// not the alphabet: what a player reaches for first comes first.
+        /// </summary>
+        private static readonly string[,] QueryMethods =
+        {
+            { "where", "keeps what passes a test" },
+            { "select", "one value out of each item" },
+            { "sum", "adds them up" },
+            { "avg", "their average, 0 when empty" },
+            { "min", "the smallest" },
+            { "max", "the biggest" },
+            { "count", "how many" },
+            { "first", "the first one; stops the chip if there is none" },
+            { "last", "the last one; stops the chip if there is none" },
+            { "firstOr", "the first one, or the value given" },
+            { "lastOr", "the last one, or the value given" },
+            { "any", "is there one?" },
+            { "all", "do they all pass?" },
+            { "contains", "is this value in it?" },
+            { "indexOf", "where it is, or -1" },
+            { "take", "the first N" },
+            { "skip", "everything after the first N" },
+            { "takeWhile", "from the start, while a test passes" },
+            { "skipWhile", "from the first item that fails a test" },
+            { "orderBy", "sorted by a key, ascending" },
+            { "orderByDesc", "sorted by a key, descending" },
+            { "reverse", "back to front" },
+            { "distinct", "drops repeats" },
+            { "into", "writes the result into a list that already exists" },
+        };
+
+        /// <summary>Only a list has these: an array is always full.</summary>
+        private static readonly string[,] ListOnlyMembers =
+        {
+            { "count", "how many items it holds" },
+            { "add", "appends the item; false when it is full" },
+            { "remove", "takes the first one equal to the value out" },
+            { "removeAt", "takes the one at an index out, keeping the order" },
+            { "clear", "empties it" },
         };
 
         public sealed class CompletionResult
@@ -151,7 +197,8 @@ namespace IZLang.Editor
 
             var items = new List<CompletionItem>();
             var context = Classify(source, tokens, prefixSpan.Start, declarations, structs,
-                                   out int pin, out string? prefabName, out var structType);
+                                   out int pin, out string? prefabName, out var structType,
+                                   out bool wholeList);
 
             // Blank line, nobody asked for anything: dumping the whole vocabulary over
             // the code gets in the way more than it helps. The other contexts came from
@@ -182,6 +229,10 @@ namespace IZLang.Editor
                     AddStructFields(items, prefixSpan, structType);
                     break;
 
+                case CompletionContext.ListMethod:
+                    AddQueryMethods(items, prefixSpan, wholeList);
+                    break;
+
                 case CompletionContext.Prefab:
                 case CompletionContext.PrefabString:
                     AddPrefabs(items, prefixSpan, environment, prefix);
@@ -204,11 +255,13 @@ namespace IZLang.Editor
                                                   List<DeclaredSymbol> declarations,
                                                   List<DeclaredStruct> structs,
                                                   out int pin, out string? prefabName,
-                                                  out DeclaredStruct? structType)
+                                                  out DeclaredStruct? structType,
+                                                  out bool wholeList)
         {
             pin = -1;
             prefabName = null;
             structType = null;
+            wholeList = false;
 
             // Inside #"..."? The lexer swallows it all into one token, so looking back
             // at the raw text is more direct than looking at the tokens.
@@ -227,6 +280,11 @@ namespace IZLang.Editor
                 // what does not resolve to a struct falls through to the device paths.
                 structType = ResolveStructChain(tokens, index - 1, declarations, structs);
                 if (structType != null) return CompletionContext.StructField;
+
+                // 'xs.' and 'xs.where(f).' -> the query methods. 'wholeList' is what
+                // separates the two: only the list itself can be added to or emptied.
+                if (IsQuerySubject(tokens, index - 1, declarations, out wholeList))
+                    return CompletionContext.ListMethod;
 
                 // x.slot[i].  ->  the token before the '.' is ']'
                 if (index >= 1 && tokens[index - 1].Kind == TokenKind.RBracket)
@@ -362,6 +420,57 @@ namespace IZLang.Editor
             }
 
             return depth == 0 ? DeclarationScanner.FindStruct(structs, typeName) : null;
+        }
+
+        /// <summary>
+        /// Is what sits just before the dot something a query reads: a list, an array,
+        /// or the result of another query method?
+        ///
+        /// <paramref name="wholeList"/> comes back true only for a list named as it
+        /// is, which is the one case where 'add', 'removeAt' and 'clear' apply.
+        /// </summary>
+        private static bool IsQuerySubject(List<Token> tokens, int index,
+                                           List<DeclaredSymbol> declarations, out bool wholeList)
+        {
+            wholeList = false;
+            if (index < 0) return false;
+
+            if (tokens[index].Kind == TokenKind.Identifier)
+            {
+                var symbol = DeclarationScanner.Find(declarations, tokens[index].Text);
+                if (symbol == null || symbol.ArrayDepth == 0) return false;
+                if (symbol.Kind == DeclaredKind.Device || symbol.Kind == DeclaredKind.Function) return false;
+
+                wholeList = symbol.IsList;
+                return true;
+            }
+
+            // '...)' - a method call, if a dot opened it. 'all(X).' ends the same way
+            // and is a batch selector, so the dot before the name is what tells them apart.
+            if (tokens[index].Kind == TokenKind.RParen)
+            {
+                int open = MatchingOpenParen(tokens, index);
+                if (open < 2) return false;
+                if (tokens[open - 2].Kind != TokenKind.Dot) return false;
+
+                string name = tokens[open - 1].Text;
+                for (int i = 0; i < QueryMethods.GetLength(0); i++)
+                    if (string.Equals(QueryMethods[i, 0], name, StringComparison.Ordinal)) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>From a ')', the index of its matching '('.</summary>
+        private static int MatchingOpenParen(List<Token> tokens, int closeIndex)
+        {
+            int depth = 0;
+            for (int i = closeIndex; i >= 0; i--)
+            {
+                if (tokens[i].Kind == TokenKind.RParen) depth++;
+                else if (tokens[i].Kind == TokenKind.LParen && --depth == 0) return i;
+            }
+            return -1;
         }
 
         /// <summary>From a ']', the index just before its matching '['.</summary>
@@ -540,6 +649,33 @@ namespace IZLang.Editor
             {
                 string detail = field.TypeName + (field.ArrayDepth > 0 ? "[]" : string.Empty);
                 items.Add(new CompletionItem(field.Name, CompletionKind.Property, detail, span));
+            }
+        }
+
+        /// <summary>
+        /// The methods a list understands. The ones that change it are only offered
+        /// on the list itself: a query hands back a result, not the list.
+        /// </summary>
+        private static void AddQueryMethods(List<CompletionItem> items, SourceSpan span, bool wholeList)
+        {
+            if (wholeList)
+            {
+                for (int i = 0; i < ListOnlyMembers.GetLength(0); i++)
+                {
+                    items.Add(new CompletionItem(ListOnlyMembers[i, 0], CompletionKind.Method,
+                        ListOnlyMembers[i, 1], span, i));
+                }
+            }
+
+            for (int i = 0; i < QueryMethods.GetLength(0); i++)
+            {
+                // 'count' is both the number of items and a method over a query; on the
+                // list itself it was already offered above.
+                if (wholeList && string.Equals(QueryMethods[i, 0], "count", StringComparison.Ordinal))
+                    continue;
+
+                items.Add(new CompletionItem(QueryMethods[i, 0], CompletionKind.Method,
+                    QueryMethods[i, 1], span, 10 + i));
             }
         }
 

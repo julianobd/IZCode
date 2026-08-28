@@ -18,6 +18,8 @@ namespace IZLang.Binding
         Batch,
         /// <summary>Fixed length array: num[8].</summary>
         Array,
+        /// <summary>Fixed capacity list: list num[8] - an array plus how much of it is in use.</summary>
+        List,
         /// <summary>An instance of a declared 'struct'.</summary>
         Struct,
     }
@@ -62,6 +64,14 @@ namespace IZLang.Binding
         public static IZType ArrayOf(IZType elementType, int length) =>
             new IZType(IZTypeKind.Array, elementType, length);
 
+        /// <summary>
+        /// A list of <paramref name="capacity"/> cells at most. <see cref="Length"/>
+        /// is that capacity: how many are in use is the count cell, and only exists
+        /// while the program runs.
+        /// </summary>
+        public static IZType ListOf(IZType elementType, int capacity) =>
+            new IZType(IZTypeKind.List, elementType, capacity);
+
         public static IZType Of(StructSymbol structSymbol) =>
             new IZType(IZTypeKind.Struct, structSymbol: structSymbol);
 
@@ -69,7 +79,14 @@ namespace IZLang.Binding
         /// Does the value live in the heap? An aggregate is handled through a
         /// reference: the stack carries the address, never the contents.
         /// </summary>
-        public bool IsAggregate => Kind == IZTypeKind.Array || Kind == IZTypeKind.Struct;
+        public bool IsAggregate =>
+            Kind == IZTypeKind.Array || Kind == IZTypeKind.Struct || Kind == IZTypeKind.List;
+
+        /// <summary>
+        /// Where the first element sits, counted from the address of the value.
+        /// A list opens with its count, so its items start one cell in.
+        /// </summary>
+        public int ItemsOffset => Kind == IZTypeKind.List ? 1 : 0;
 
         /// <summary>
         /// How many heap cells one value of this type takes. A scalar is 1: it shows
@@ -82,6 +99,8 @@ namespace IZLang.Binding
                 switch (Kind)
                 {
                     case IZTypeKind.Array: return Length * (ElementType?.Size ?? 1);
+                    // One cell for the count, then the capacity.
+                    case IZTypeKind.List: return 1 + Length * (ElementType?.Size ?? 1);
                     case IZTypeKind.Struct: return Struct?.Size ?? 0;
                     default: return 1;
                 }
@@ -99,6 +118,7 @@ namespace IZLang.Binding
                 case IZTypeKind.Dev: return "dev";
                 case IZTypeKind.Batch: return "batch";
                 case IZTypeKind.Array: return (ElementType?.Display() ?? "?") + "[" + Length + "]";
+                case IZTypeKind.List: return "list " + (ElementType?.Display() ?? "?") + "[" + Length + "]";
                 case IZTypeKind.Struct: return Struct?.Name ?? "?";
                 default: return "?";
             }
@@ -130,6 +150,7 @@ namespace IZLang.Binding
             switch (Kind)
             {
                 case IZTypeKind.Array:
+                case IZTypeKind.List:
                     return Length == other.Length &&
                            ElementType != null && ElementType.Equals(other.ElementType);
                 case IZTypeKind.Struct:
@@ -142,7 +163,8 @@ namespace IZLang.Binding
         public override int GetHashCode()
         {
             int hash = (int)Kind * 397;
-            if (Kind == IZTypeKind.Array) hash ^= Length * 31 + (ElementType?.GetHashCode() ?? 0);
+            if (Kind == IZTypeKind.Array || Kind == IZTypeKind.List)
+                hash ^= Length * 31 + (ElementType?.GetHashCode() ?? 0);
             if (Kind == IZTypeKind.Struct && Struct != null) hash ^= Struct.Name.GetHashCode();
             return hash;
         }

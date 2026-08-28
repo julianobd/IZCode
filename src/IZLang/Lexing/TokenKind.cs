@@ -18,6 +18,7 @@ namespace IZLang.Lexing
         KwBreak, KwContinue, KwYield,
         KwTrue, KwFalse,
         KwNum, KwBool, KwStr, KwDev,      // type names
+        KwList,                            // 'list num[8]'
         KwAll, KwNamed,                    // batch selectors
 
         // punctuation
@@ -27,6 +28,7 @@ namespace IZLang.Lexing
         Comma, Semicolon, Colon, Dot,
         DotDot, DotDotEquals,              // 0..10 and 0..=10
         Arrow,                             // ->
+        FatArrow,                          // =>, the body of a query lambda
 
         // operators
         Plus, Minus, Star, Slash, Percent,

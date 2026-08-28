@@ -1,0 +1,89 @@
+#iz
+// Queries over a list.
+//
+// Four sensors, one list, and the questions asked of it in one line each. Every
+// chain below is compiled into a single loop over the cells: there is no second
+// list between one method and the next, and the lambdas are inlined, so this
+// costs what the loop you would have written by hand costs.
+
+device north = d0;
+device south = d1;
+device east  = d2;
+device west  = d3;
+
+device display = d4;
+device alarm   = d5;
+
+const CAP    = 4;              // one cell per sensor, decided at compile time
+const LIMIT  = 110.0;          // kPa, above which a room is worth a look
+const WARM   = 293.15;         // K, room temperature
+
+struct Room {
+    id:       num;
+    pressure: num;
+    warm:     bool;
+}
+
+// Declared outside main, so it lives as long as the program does.
+var rooms: list Room[CAP];
+
+// A list of the ids that were over the limit, kept for the next tick.
+var flagged: list num[CAP];
+
+fn take(id: num, pressure: num, temperature: num) {
+    var room: Room;                         // cleared again on every call
+    room.id       = id;
+    room.pressure = pressure;
+    room.warm     = temperature > WARM;
+
+    rooms.add(room);                        // a copy of the cells; false when full
+}
+
+fn sample() {
+    rooms.clear();
+    take(0, north.Pressure, north.Temperature);
+    take(1, south.Pressure, south.Temperature);
+    take(2, east.Pressure,  east.Temperature);
+    take(3, west.Pressure,  west.Temperature);
+}
+
+fn main() {
+    loop {
+        sample();
+
+        // One value out of the whole list.
+        display.Setting = rooms.avg(x => x.pressure);
+        alarm.On        = rooms.any(x => x.pressure > LIMIT);
+
+        // A filter and a count, without a loop and without a counter.
+        var over = rooms.count(x => x.pressure > LIMIT);
+
+        // The worst room, ordered by pressure. 'last()' stops the chip when
+        // nothing came through, so the count is checked before asking.
+        if over > 0 {
+            var worst = rooms.orderBy(x => x.pressure).last();
+            display.Setting = worst.pressure;
+
+            // The ids over the limit, into a list that survives the tick: the
+            // cells a chain reserves belong to the call that ran it.
+            rooms.where(x => x.pressure > LIMIT)
+                 .select(x => x.id)
+                 .into(flagged);
+        }
+
+        // The three lowest pressures, added up. The sort decides the order, and
+        // 'take' then reads the first three of it.
+        var bottom3 = rooms.orderBy(x => x.pressure).take(3).sum(x => x.pressure);
+
+        // A query hands back a list of its own, which can be walked like any other.
+        var warm = rooms.where(x => x.warm);
+        var total = 0.0;
+        for i in 0..warm.count { total += warm[i].pressure; }
+
+        // Nothing came through? 'firstOr' answers instead of stopping the chip.
+        var lowest = rooms.select(x => x.pressure).orderBy(p => p).firstOr(0);
+
+        display.Setting = bottom3 + total + lowest + flagged.count;
+        yield;
+    }
+}

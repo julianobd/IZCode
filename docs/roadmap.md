@@ -166,6 +166,49 @@ game's logic network carries numbers, so `hash(s)` is the whole bridge between a
 str and the world. If a way to show text in game ever turns up (a display, a
 label the mod can set), that is where it would plug in.
 
+### Lists, and queries over them
+
+An array said how many cells it had and nothing about how many of them meant
+something, so every program that collected anything carried its own `count`
+beside it. That pairing is a type now: `list num[8]` is the same run of cells
+with the count in front of them, `add`, `remove` and `removeAt` move it, and an
+index is checked against it instead of against the capacity - reading past the last item
+is an error even though the cell is there.
+
+On top of it sit the query methods, in the shape of LINQ's: `where`, `select`,
+`take`, `skip`, `takeWhile`, `skipWhile`, `orderBy`, `orderByDesc`, `reverse`,
+`distinct`, `sum`, `avg`, `min`, `max`, `count`, `any`, `all`, `first`, `last`,
+`firstOr`, `lastOr`, `contains`, `indexOf` and `into`. They work over an array
+too, which is a list that is always full.
+
+What makes them affordable on a chip is that none of them exists at runtime. A
+chain is compiled into **one loop** over the source cells, and `x => x.temp > 30`
+is not a value that gets built and called - there are no function pointers in IZ
+- but a name for the item the loop is holding, with its body emitted straight
+into the loop body. `xs.where(f).take(4).sum()` walks the cells once, stops as
+soon as it has four, and keeps a running total, which is the loop anyone would
+have written by hand.
+
+Four of them cannot stream, since they have to see every element before handing
+over the first: `orderBy`, `orderByDesc`, `distinct`, and `reverse` when a stage
+came before it. Those materialize into cells the compiler reserves, sized from
+the source capacity and narrowed by whatever `take` and `skip` say, in the frame
+like every other declaration. The sort is a stable insertion sort over a
+precomputed key per element, so the lambda runs once per item and not once per
+comparison.
+
+Three opcodes carry all of it: `ListIndexRef`, which checks the index against
+the count in the list's first cell, and `CopyHeap` / `ClearHeap`, which move and
+zero a run of cells so an item can be a struct. `Trap` is the fourth, and only
+exists so `first()` over nothing stops with a sentence instead of answering
+something made up.
+
+What is deliberately left out: a list of arrays or of lists, since the item
+would carry a length of its own that `count` already answers; and a query
+handing back a view into the source, since a chain is allowed to sort what it
+gives back. A query result is a copy, and `into` is how one reaches a list that
+outlives the call.
+
 ## Language ideas for later
 
 None of this is needed for v0.1 to work.

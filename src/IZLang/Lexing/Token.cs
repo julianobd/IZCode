@@ -61,6 +61,7 @@ namespace IZLang.Lexing
                 case TokenKind.KwBool: return "'bool'";
                 case TokenKind.KwStr: return "'str'";
                 case TokenKind.KwDev: return "'dev'";
+                case TokenKind.KwList: return "'list'";
                 case TokenKind.KwAll: return "'all'";
                 case TokenKind.KwNamed: return "'named'";
 
@@ -77,6 +78,7 @@ namespace IZLang.Lexing
                 case TokenKind.DotDot: return "'..'";
                 case TokenKind.DotDotEquals: return "'..='";
                 case TokenKind.Arrow: return "'->'";
+                case TokenKind.FatArrow: return "'=>'";
 
                 case TokenKind.Plus: return "'+'";
                 case TokenKind.Minus: return "'-'";

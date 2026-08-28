@@ -213,6 +213,7 @@ namespace IZLang.Editor
                 case TokenKind.KwBool:
                 case TokenKind.KwStr:
                 case TokenKind.KwDev:
+                case TokenKind.KwList:
                     return theme.TypeName;
 
                 case TokenKind.KwAll:

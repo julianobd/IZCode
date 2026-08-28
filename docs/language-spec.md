@@ -42,6 +42,7 @@ Execution starts at `fn main()`. When `main` returns, the chip stops (state
 | `str` | ASCII text, immutable, built and compared while the program runs (section 11) |
 | `dev` | device handle (pin `d0`–`d5`, or a reference by id) |
 | `T[N]` | array of exactly `N` values of type `T` (section 10) |
+| `list T[N]` | up to `N` values of type `T`, and how many are in use (section 12) |
 | a `struct` | a group of named fields, declared by the program (section 10) |
 
 There are no separate integers: as in IC10, everything is `num`. Bitwise
@@ -207,7 +208,7 @@ fn warn() {                    // no return value
 Recursion is allowed, bounded by `IZLimits.MaxCallDepth`. Overflowing it raises
 the `CallStackOverflow` runtime error.
 
-A function **cannot return an array or a struct**. Its cells belong to the call
+A function **cannot return an array, a list or a struct**. Its cells belong to the call
 frame and are released on the return, so the address would point at memory the
 next call reuses. Pass the aggregate in as a parameter and fill it in instead:
 parameters travel by reference, so what the function writes is what the caller
@@ -246,6 +247,7 @@ abs ceil floor round trunc sqrt exp log
 sin cos tan asin acos atan atan2
 min max pow sign clamp
 len(array)                  // the declared length, folded at compile time
+len(list)                   // the capacity; xs.count is how much is in use
 rand()                      // [0,1)
 nan() inf() isnan(x)
 sleep(seconds)              // hands the tick back for N seconds
@@ -387,6 +389,7 @@ never a `dev` - a device is a pin known at compile time, not a value.
 | returning an array or a struct | the cells are released on the return |
 | `const a: num[4]` | a `const` is folded into every use, and an aggregate has nothing to fold |
 | an array of `dev` | same reason a field is never a `dev` |
+| a list of arrays, or of lists | the item would carry a length of its own, which `count` already answers |
 
 ### 10.4 Lifetime and passing
 
@@ -485,3 +488,186 @@ bounded:
 A program that genuinely holds on to more than 512 distinct strings at once, or
 builds one longer than 256 characters, stops with the `StringOverflow` runtime
 error rather than growing without a bound.
+
+---
+
+## 12. Lists and queries
+
+An array has a length and nothing else: every cell is content. A **list** is the
+same run of cells with one number in front of it saying how many are in use.
+
+```iz
+var jobs: list num[8];             // room for eight, holding none
+var seed: list num[8] = [10, 20];  // count 2, six cells still free
+```
+
+The capacity is part of the type and is decided at compile time, exactly like an
+array's length: `list num[4]` and `list num[8]` are different types. What
+changes while the program runs is the count.
+
+| | |
+|---|---|
+| `len(xs)` | the capacity, folded into a constant |
+| `xs.count` | how many items are in it right now; read only |
+| `xs[i]` | the item at `i`, checked **against the count** |
+| `xs.add(v)` | appends `v`; `false` when the list is full |
+| `xs.remove(v)` | takes the first item equal to `v` out; `false` when it is not there |
+| `xs.removeAt(i)` | takes item `i` out and slides the rest down; `false` outside |
+| `xs.clear()` | empties it |
+
+`xs[5]` on a list holding three items is the `IndexOutOfRange` runtime error,
+even when the capacity is eight: the cells past the count are room, not content.
+That is the whole difference from an array, and it is why an index cannot be
+checked at compile time here the way an array's constant index is.
+
+An item is anything a struct field may be - `num`, `bool`, `str` or a struct -
+but not an array or another list: an item that carried a length of its own would
+answer a question `count` already answers once.
+
+```iz
+struct Job { id: num; temp: num; done: bool; }
+
+var queue: list Job[8];
+
+var job: Job;                      // a Job of its own, zeroed
+job.id = 7;
+queue.add(job);                    // the list keeps a copy of its cells
+
+var last = queue[queue.count - 1]; // reading gives a name for the cells, not a copy
+last.done = true;                  // so this marks it in the list
+```
+
+`add` copies and the index does not, and the difference is the same one arrays
+already have: an aggregate travels by its address, so `add` has to write the
+cells somewhere, and the somewhere is the list. `remove` compares items, so a
+list of structs removes by index, or finds the item with `indexOf` over a field
+first.
+
+### 12.1 The query methods
+
+A list, and an array, answer the questions you would otherwise write a loop for.
+
+**Stages** - they hand back a sequence, so more may follow:
+
+```
+where(x => bool)        keeps what passes the test
+select(x => value)      one value out of each item
+take(n)  skip(n)        the first n, everything after the first n
+takeWhile(x => bool)    from the start, while the test passes
+skipWhile(x => bool)    from the first item that fails the test
+orderBy(x => key)       sorted by the key, ascending
+orderByDesc(x => key)   sorted by the key, descending
+reverse()               back to front
+distinct()              drops repeats, keeping the first of each
+```
+
+**Terminals** - they hand back one value, and end the chain:
+
+```
+count()  count(x => bool)          how many
+sum(...)  avg(...)                 added up, averaged; 0 over nothing
+min(...)  max(...)                 the smallest, the biggest; 0 over nothing
+any()  any(x => bool)  all(f)      is there one, do they all pass
+first(...)  last(...)              the item itself; a runtime error over nothing
+firstOr(v)  lastOr(v)              the same, answering v when nothing matched
+contains(v)  indexOf(v)            is it in there, and where
+into(target)                       fills an existing list; how many got there
+```
+
+`sum`, `avg`, `min` and `max` take an optional selector, so `xs.sum(f)` is
+`xs.select(f).sum()`. `count`, `any`, `first` and `last` take an optional test,
+so `xs.first(f)` is `xs.where(f).first()`.
+
+```iz
+var mean  = rooms.avg(x => x.temp);
+var hot   = rooms.count(x => x.temp > 30);
+var worst = rooms.orderByDesc(x => x.temp).first();
+var top3  = rooms.orderByDesc(x => x.temp).take(3).sum(x => x.temp);
+```
+
+### 12.2 What `x => ...` is, and what it is not
+
+The `x => expression` written inside a query method is not a value. There are no
+function pointers in IZ: it may only appear as the argument of one of the
+methods above, it has exactly one parameter, and its body is an expression.
+`var f = x => x + 1;` does not compile.
+
+What it is, is a name for the item the loop is holding. The compiler inlines the
+body into the loop it generates, so the parameter costs a local slot and the
+body costs what the same expression would cost anywhere else - there is no call
+per element.
+
+### 12.3 What a chain costs
+
+A whole chain becomes **one loop** over the source cells. Nothing is built
+between one method and the next:
+
+```iz
+var n = readings.where(x => x > 30).take(4).sum();
+```
+
+walks the readings once, stops as soon as it has four, and keeps a running
+total. It is the loop you would have written, and the compiler wrote it.
+
+Four methods cannot work that way, because they have to see every element before
+they can hand the first one over: `orderBy`, `orderByDesc`, `distinct` and
+`reverse` after a stage. Those **materialize**: the compiler reserves a list of
+its own in the frame, fills it with what came before them, does its work there,
+and the rest of the chain reads those cells. A `reverse()` at the start of a
+chain does not, since reading the cells backwards is enough.
+
+The sort is an insertion sort, and it is **stable**: two items with the same key
+keep the order they were in, so `orderBy(a)` after `orderBy(b)` sorts by `a` and
+breaks the ties by `b`.
+
+The cells any of that reserves are sized at compile time, from the source
+capacity, narrowed by whatever `take` and `skip` say. They belong to the frame,
+like every other declaration, and are cleared again on each lap of a loop.
+
+### 12.4 A query that hands back a list
+
+A chain that ends on a stage is a list, and it can be held:
+
+```iz
+var open = queue.where(x => !x.done);      // list Job[8]
+for i in 0..open.count { open[i].id = 0; }
+```
+
+Its capacity is the source's, narrowed by `take` and `skip`, and its items are
+**copies**: writing into `open` above does not touch `queue`. Nothing else would
+be safe, since a query may sort what it hands back.
+
+The cells belong to the call that ran the query, exactly like `var a: num[8]`.
+To keep a result past the tick, write it into a list that lives longer:
+
+```iz
+var flagged: list num[8];                  // outside any function
+
+fn main() {
+    loop {
+        queue.where(x => x.temp > 30).select(x => x.id).into(flagged);
+        yield;
+    }
+}
+```
+
+`into` replaces the contents of the target and gives back how many items got
+there. When the target has less room than the query has results, the extra ones
+are dropped: the count says what fits. The target must not be the list being
+read - a query walking cells that are being written under it has no defined
+answer.
+
+### 12.5 The edges
+
+- Over an empty list, `sum`, `avg`, `min`, `max` and `count` are `0`, `any` is
+  false and `all` is true - the same answer a batch read of nothing gives.
+- `first()` and `last()` over nothing stop the chip, the way `xs[0]` of an empty
+  list does. `firstOr(v)` and `lastOr(v)` are the forms that say what to answer
+  instead.
+- `sum` and `avg` take numbers, so a list of structs goes through `select`
+  first. `min`, `max`, `contains`, `indexOf`, `distinct` and `remove` compare
+  values, so they do too.
+- `indexOf` answers with the position **in the result**, not in the source: a
+  `where` in front of it changes what the number means.
+- An array works everywhere a list does, minus the four methods that change it:
+  every cell of an array is content, and there is no count to move.

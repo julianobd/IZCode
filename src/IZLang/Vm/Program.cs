@@ -132,6 +132,7 @@ namespace IZLang.Vm
                     return instruction.A + " " + instruction.B + "   ; " + Builtins.GetName(instruction.A);
 
                 case OpCode.PushStr:
+                case OpCode.Trap:
                 {
                     string text = instruction.A < Strings.Length ? Strings[instruction.A] : "?";
                     return instruction.A + "   ; \"" + text + "\"";
@@ -160,6 +161,13 @@ namespace IZLang.Vm
 
                 case OpCode.IndexRef:
                     return "stride:" + instruction.A + " len:" + instruction.B;
+
+                case OpCode.ListIndexRef:
+                    return "stride:" + instruction.A + " cap:" + instruction.B;
+
+                case OpCode.CopyHeap:
+                case OpCode.ClearHeap:
+                    return instruction.A + " cell(s)";
 
                 default:
                     return instruction.A == 0 && instruction.B == 0

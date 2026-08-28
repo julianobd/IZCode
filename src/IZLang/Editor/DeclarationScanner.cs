@@ -27,6 +27,9 @@ namespace IZLang.Editor
         /// <summary>How many pairs of brackets the annotation carried.</summary>
         public int ArrayDepth { get; }
 
+        /// <summary>Was the annotation a 'list'? What can be called on it depends on it.</summary>
+        public bool IsList { get; }
+
         /// <summary>
         /// The annotation exactly as it was written, so hover can show 'num[8]'
         /// rather than the pieces it was taken apart into. Empty with no annotation.
@@ -35,7 +38,7 @@ namespace IZLang.Editor
 
         public DeclaredSymbol(string name, DeclaredKind kind, SourceSpan nameSpan, int pin = -1,
                               string? typeName = null, int arrayDepth = 0,
-                              SourceSpan typeSpan = default)
+                              SourceSpan typeSpan = default, bool isList = false)
         {
             Name = name;
             Kind = kind;
@@ -44,6 +47,7 @@ namespace IZLang.Editor
             TypeName = typeName;
             ArrayDepth = arrayDepth;
             TypeSpan = typeSpan;
+            IsList = isList;
         }
 
         public override string ToString() => Kind + " " + Name;
@@ -55,12 +59,14 @@ namespace IZLang.Editor
         public string Name { get; }
         public string TypeName { get; }
         public int ArrayDepth { get; }
+        public bool IsList { get; }
 
-        public DeclaredField(string name, string typeName, int arrayDepth)
+        public DeclaredField(string name, string typeName, int arrayDepth, bool isList = false)
         {
             Name = name;
             TypeName = typeName;
             ArrayDepth = arrayDepth;
+            IsList = isList;
         }
 
         public override string ToString() => Name + ": " + TypeName + new string('*', ArrayDepth);
@@ -200,8 +206,9 @@ namespace IZLang.Editor
                     {
                         string fieldName = tokens[j].Text;
                         int k = j + 2;
-                        if (TryReadType(tokens, ref k, out string typeName, out int depth))
-                            declared.Fields.Add(new DeclaredField(fieldName, typeName, depth));
+                        if (TryReadType(tokens, ref k, out string typeName, out int depth,
+                                        out bool fieldIsList))
+                            declared.Fields.Add(new DeclaredField(fieldName, typeName, depth, fieldIsList));
                         j = k;
                         continue;
                     }
@@ -228,12 +235,23 @@ namespace IZLang.Editor
         /// as balanced groups without looking inside.
         /// </summary>
         private static bool TryReadType(IReadOnlyList<Token> tokens, ref int index,
-                                        out string typeName, out int arrayDepth)
+                                        out string typeName, out int arrayDepth,
+                                        out bool isList)
         {
             typeName = string.Empty;
             arrayDepth = 0;
+            isList = false;
 
             if (index >= tokens.Count) return false;
+
+            // 'list num[8]': the brackets after it are the room it has, and the item
+            // type is what the rest of this reads.
+            if (tokens[index].Kind == TokenKind.KwList)
+            {
+                isList = true;
+                index++;
+                if (index >= tokens.Count) return false;
+            }
 
             switch (tokens[index].Kind)
             {
@@ -282,21 +300,24 @@ namespace IZLang.Editor
 
             string? typeName = null;
             int arrayDepth = 0;
+            bool isList = false;
             SourceSpan typeSpan = default;
 
             if (index + 2 < tokens.Count && tokens[index + 2].Kind == TokenKind.Colon)
             {
                 int i = index + 3;
-                if (TryReadType(tokens, ref i, out string parsed, out int depth))
+                if (TryReadType(tokens, ref i, out string parsed, out int depth, out bool list))
                 {
                     typeName = parsed;
                     arrayDepth = depth;
+                    isList = list;
                     typeSpan = SpanOfType(tokens, index + 3, i);
                 }
             }
 
             symbols.Add(new DeclaredSymbol(tokens[index + 1].Text, kind, tokens[index + 1].Span,
-                pin: -1, typeName: typeName, arrayDepth: arrayDepth, typeSpan: typeSpan));
+                pin: -1, typeName: typeName, arrayDepth: arrayDepth, typeSpan: typeSpan,
+                isList: isList));
         }
 
         /// <summary>Reads the parameter list starting at the '(' in <paramref name="start"/>.</summary>
@@ -315,21 +336,24 @@ namespace IZLang.Editor
                 {
                     string? typeName = null;
                     int arrayDepth = 0;
+                    bool isList = false;
                     SourceSpan typeSpan = default;
 
                     if (i + 1 < tokens.Count && tokens[i + 1].Kind == TokenKind.Colon)
                     {
                         int k = i + 2;
-                        if (TryReadType(tokens, ref k, out string parsed, out int depth))
+                        if (TryReadType(tokens, ref k, out string parsed, out int depth, out bool list))
                         {
                             typeName = parsed;
                             arrayDepth = depth;
+                            isList = list;
                             typeSpan = SpanOfType(tokens, i + 2, k);
                         }
                     }
 
                     symbols.Add(new DeclaredSymbol(tokens[i].Text, DeclaredKind.Parameter, tokens[i].Span,
-                        pin: -1, typeName: typeName, arrayDepth: arrayDepth, typeSpan: typeSpan));
+                        pin: -1, typeName: typeName, arrayDepth: arrayDepth, typeSpan: typeSpan,
+                        isList: isList));
                     expectingName = false;
                 }
                 else if (tokens[i].Kind == TokenKind.Comma)
