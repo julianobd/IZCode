@@ -548,15 +548,6 @@ Working and covered by tests:
 - automatic indentation: `Enter`, `}` and `Tab`/`Shift+Tab` over a selected block
 - logging with level and subject, switchable by file or from the console
 
-Written but **not tested inside the game** (see
-[docs/roadmap.md](docs/roadmap.md)):
-
-- the prefab scan that generates the catalog
-- the IZ mode code area (the single field that replaces the 128 lines)
-- drawing the completion popup, the tooltip and the error panel
-- the Harmony grafts (they compile against the real assemblies, but have never
-  run)
-
 Not done yet:
 
 - persisting the VM state in the save
