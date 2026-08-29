@@ -514,16 +514,88 @@ namespace IZCode.Mod.UI
         //  Bridge to the game's 128 lines
         // ==================================================================
 
+        /// <summary>
+        /// Takes over the text the game just wrote into the 128 lines.
+        ///
+        /// The Paste and Clear buttons, and loading a script from the Library, all end
+        /// up in <c>InputSourceCode.Paste</c>, which writes straight into the lines and
+        /// knows nothing about this panel. Without this the panel would hand its own,
+        /// now stale, text back on the very next frame and the button would look like
+        /// it had done nothing at all.
+        /// </summary>
+        public static void ReloadFromGameLines()
+        {
+            if (!IsActive) return;
+
+            try { Instance!.AdoptGameLines(); }
+            catch (Exception ex)
+            {
+                IZLog.Warn(IZLogArea.Editor, "could not reload the IZ code area: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Makes sure the game's lines are holding the panel's text right now.
+        ///
+        /// The usual flush happens in LateUpdate; <c>InputSourceCode.Copy()</c> - behind
+        /// the copy button, the save button and Save As - runs in Update and would
+        /// otherwise be able to read the lines one frame behind.
+        /// </summary>
+        public static void FlushToGame()
+        {
+            if (!IsActive) return;
+
+            try { Instance!.FlushToGameLines(force: false); }
+            catch (Exception ex)
+            {
+                IZLog.Warn(IZLogArea.Editor, "could not hand the IZ text back to the game: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// The whole buffer was replaced from outside: the caret goes to the start and
+        /// the selection is dropped, since neither means anything in the new text.
+        /// </summary>
+        private void AdoptGameLines()
+        {
+            if (_input == null) return;
+
+            string source = ReadGameLines(out _);
+
+            _input.SetTextWithoutNotify(source);
+            _input.stringPosition = 0;
+            _input.selectionStringAnchorPosition = 0;
+            _input.selectionStringFocusPosition = 0;
+            _dirty = true;
+
+            // Clicking the button took the keyboard away from the field; without this
+            // the player would have to click back on the code to carry on typing.
+            _refocus = true;
+        }
+
+        /// <summary>The game's 128 lines joined into one source, and the lines themselves.</summary>
+        private static string ReadGameLines(out string?[] texts)
+        {
+            texts = new string?[0];
+
+            var editor = InputSourceCode.Instance;
+            if (editor == null || editor.LinesOfCode == null) return string.Empty;
+
+            var lines = editor.LinesOfCode;
+            var buffer = new string?[lines.Count];
+            for (int i = 0; i < lines.Count; i++) buffer[i] = lines[i]?.Text;
+
+            texts = buffer;
+            return LineOffsets.Join(buffer);
+        }
+
         private void LoadFromGameLines()
         {
             var editor = InputSourceCode.Instance;
             if (_input == null || editor == null || editor.LinesOfCode == null) return;
 
             var lines = editor.LinesOfCode;
-            var texts = new string?[lines.Count];
-            for (int i = 0; i < lines.Count; i++) texts[i] = lines[i]?.Text;
-
-            string source = LineOffsets.Join(texts);
+            string source = ReadGameLines(out var texts);
 
             // The caret comes from where it was in the game editor: whoever just typed
             // '#iz' keeps the caret at the end of '#iz', not thrown to the start.

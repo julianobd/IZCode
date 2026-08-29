@@ -386,8 +386,11 @@ Along with it comes VS Code's automatic indentation:
 
 The original 128 lines do not go away: they become invisible and get the text
 back on every change, so `Copy()`, the save button, the byte count and the chip
-keep working as before. Deleting the `#iz` gives the game's editor back, whole,
-with the caret on the same line. And if building the panel fails for any reason,
+keep working as before. The traffic runs both ways: **Copy**, **Paste**, **Clear**
+and loading a script from the **Library** write into those same lines, and the
+code area picks the new text up at once instead of writing its own back over it.
+Deleting the `#iz` gives the game's editor back, whole, with the caret on the
+same line. And if building the panel fails for any reason,
 the original editor never leaves the stage.
 
 **Completion that knows your wiring.** The editor is opened by the Programmable

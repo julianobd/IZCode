@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>IZCode</Name>
   <Author>julianobd</Author>
@@ -288,24 +288,10 @@ Every client and the server need the mod installed, and VM behavior in multiplay
 [i]IZCode — Structured programming for Stationeers.[/i]
 </Description>
   <ChangeLog>
-===== 0.1.3 =========================================================
+===== 0.1.4 =========================================================
+Fixed Copy/Paste/Clear buttons.
 
-DEVICES BEYOND THE SIX PINS. The six housing pins run out long before the
-devices do. The same 'device' declaration now also takes a batch selector, so a
-group on the data network gets a name once and is used like anything else:
 
-    device greenhouse_lights = named(StructureWallLight, #"greenhouse");
-    device every_light       = all(StructureWallLight);
-    device hangar            = named("hangar");   // any prefab with that label
-
-    greenhouse_lights.On = true;      // reaches every device it matches
-    var p = greenhouse_sensor.Pressure;   // a batch read, averaged over them
-
-What a selector saves is pins, not cabling: it reaches the devices on the same
-data network as the housing, exactly as a pin does.
-
-SAMPLE. samples/named-devices.iz runs a greenhouse off labelled groups - lights,
-vents, shutters and a sensor - none of them costing a pin.
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>

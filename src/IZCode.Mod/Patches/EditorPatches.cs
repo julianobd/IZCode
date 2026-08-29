@@ -58,6 +58,35 @@ namespace IZCode.Mod.Patches
             Install();
         }
 
+        /// <summary>
+        /// The Paste and Clear buttons, and loading a script from the Library, all end
+        /// here: they replace the 128 lines behind the IZ code area's back.
+        ///
+        /// The panel has to be told, or it would hand its own text back on the next
+        /// frame and undo the button. The mode cache goes with it: the pasted program
+        /// may be IC10 where the previous one was IZ, or the other way around.
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(nameof(InputSourceCode.Paste))]
+        public static void Paste_Postfix()
+        {
+            IZCodePanel.ReloadFromGameLines();
+            EditorContext.InvalidateModeCache();
+        }
+
+        /// <summary>
+        /// Copy() reads the 128 lines, and everything that leaves the editor goes
+        /// through it: the copy button, the save button and Save As. In IZ mode the
+        /// lines are only written in LateUpdate, so without this the copy could be one
+        /// frame behind what is on screen.
+        /// </summary>
+        [HarmonyPrefix]
+        [HarmonyPatch(nameof(InputSourceCode.Copy))]
+        public static void Copy_Prefix()
+        {
+            IZCodePanel.FlushToGame();
+        }
+
         private static void Install()
         {
             try
