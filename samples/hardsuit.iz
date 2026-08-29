@@ -67,7 +67,7 @@ fn climate_needed(can_open: bool) -> bool {
     if running {
         upper = target;
         lower = target - OFFSET_TEMP_LOW;
-    }
+    }    
 
     return current > upper || current < lower;
 }
@@ -84,7 +84,7 @@ fn main() {
             shut_down();
             yield;
             continue;
-        }
+        
 
         var pressure = suit.PressureExternal;
         var temperature = suit.TemperatureExternal;
@@ -107,5 +107,6 @@ fn main() {
         suit.On = climate_needed(can_open);
 
         yield;
-    }
+    
+}
 }
