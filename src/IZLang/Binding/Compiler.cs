@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using IZLang.Diagnostics;
 using IZLang.Lexing;
 using IZLang.Parsing;
@@ -659,7 +660,9 @@ namespace IZLang.Binding
 
         private void DeclareDevice(DeviceDeclaration declaration)
         {
-            if (declaration.Pin < 0) return;      // the parser already reported it
+            // The parser already reported a pin it could not read, and a device with
+            // neither a pin nor a selector has nothing left to declare.
+            if (declaration.Pin < 0 && declaration.Selector == null) return;
 
             if (_scope.LookupLocal(declaration.Name) != null)
             {
@@ -667,8 +670,101 @@ namespace IZLang.Binding
                     "'" + declaration.Name + "' was already declared in this scope");
                 return;
             }
-            DeclareTracked(new DeviceSymbol(declaration.Name, declaration.Pin),
-                           declaration.NameToken.Span);
+
+            var symbol = declaration.Selector != null
+                ? BuildBatchDeviceSymbol(declaration.Name, declaration.Selector)
+                : new DeviceSymbol(declaration.Name, declaration.Pin);
+
+            if (symbol == null) return;
+
+            DeclareTracked(symbol, declaration.NameToken.Span);
+        }
+
+        /// <summary>
+        /// Folds 'device led = named(StructureDiode, "led-dev");' into the two hashes
+        /// the batch instructions take.
+        ///
+        /// Both operands have to be known at compile time. A device is a name for a
+        /// place in the world, fixed for the whole program: letting the selector
+        /// depend on a running value would make the same name mean different devices
+        /// on different lines, which is what the inline 'named(...)' is for. Returns
+        /// null when the selector cannot be folded, after reporting why.
+        /// </summary>
+        private DeviceSymbol? BuildBatchDeviceSymbol(string name, BatchSelectorExpression selector)
+        {
+            bool named = selector.Kind == BatchSelectorKind.Named;
+            double prefabHash = 0.0;                    // 0 matches any prefab
+            var description = new StringBuilder(named ? "named(" : "all(");
+
+            if (selector.Prefab != null)
+            {
+                if (!TryFoldSelectorOperand(selector.Prefab, name, "prefab",
+                                            out prefabHash, out string prefabText))
+                    return null;
+                description.Append(prefabText);
+            }
+            else if (selector.Kind == BatchSelectorKind.All)
+            {
+                return null;                            // the parser reported the missing prefab
+            }
+
+            double labelHash = 0.0;
+            if (named)
+            {
+                if (selector.Label == null) return null;    // reported by the parser
+
+                if (!TryFoldSelectorOperand(selector.Label, name, "label",
+                                            out labelHash, out string labelText))
+                    return null;
+
+                if (selector.Prefab != null) description.Append(", ");
+                description.Append(labelText);
+            }
+
+            description.Append(')');
+            return new DeviceSymbol(name, named, prefabHash, labelHash, description.ToString());
+        }
+
+        /// <summary>
+        /// Folds one operand of a device selector to its hash, following the same
+        /// rules as the inline form: a bare undeclared identifier is a raw prefab
+        /// name, text and str consts are hashed, and a num const passes through.
+        /// </summary>
+        private bool TryFoldSelectorOperand(ExpressionSyntax expression, string deviceName,
+                                            string role, out double hash, out string text)
+        {
+            hash = 0.0;
+            text = string.Empty;
+
+            if (expression is NameExpression bareName && _scope.Lookup(bareName.Name) == null)
+            {
+                InternString(bareName.Name, expression.Span);
+                hash = PrefabHash.Compute(bareName.Name);
+                text = bareName.Name;
+                return true;
+            }
+
+            if (TryEvaluateConstantString(expression, out string? constantText))
+            {
+                InternString(constantText!, expression.Span);
+                hash = PrefabHash.Compute(constantText!);
+                text = "\"" + constantText + "\"";
+                return true;
+            }
+
+            var type = TryEvaluateConstant(expression, out double value);
+            if (type == IZType.Num || type == IZType.Bool)
+            {
+                hash = value;
+                text = value.ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+
+            _diagnostics.Report(IZErrorCode.ConstExpressionRequired, expression.Span,
+                "the " + role + " of a device selector has to be known at compile time; " +
+                "'" + deviceName + "' cannot depend on a value the program computes. " +
+                "Write the selector where it is used instead.");
+            return false;
         }
 
         private void EmitVariableDeclaration(VariableDeclaration declaration, bool isGlobal)
@@ -1154,6 +1250,12 @@ namespace IZLang.Binding
                 _scope.Lookup(targetName.Name) is DeviceSymbol device)
             {
                 if (!TryResolveLogicType(member, out int logicType)) return;
+
+                if (device.IsBatch)
+                {
+                    EmitBatchDeviceAssignment(device, member, assignment, logicType, line);
+                    return;
+                }
 
                 if (assignment.Kind != AssignmentKind.Assign)
                     Emit(OpCode.DeviceLoad, device.Pin, logicType, line);
@@ -1992,6 +2094,17 @@ namespace IZLang.Binding
                     Emit(OpCode.PushZero, 0, 0, line);
                     return IZType.Error;
                 }
+
+                // A batch device reads exactly like the selector written inline:
+                // averaged over everything it matches.
+                if (device.IsBatch)
+                {
+                    EmitDeviceSelectorOperands(device, line);
+                    Emit(device.HasLabel ? OpCode.BatchNamedLoad : OpCode.BatchLoad,
+                         logicType, (int)BatchAggregation.Average, line);
+                    return IZType.Num;
+                }
+
                 Emit(OpCode.DeviceLoad, device.Pin, logicType, line);
                 return IZType.Num;
             }
@@ -2181,6 +2294,18 @@ namespace IZLang.Binding
                 return IZType.Error;
             }
 
+            // A slot belongs to one device. A batch selector reaches a set of them,
+            // and the game has no instruction that reads a slot across a set.
+            if (device.IsBatch)
+            {
+                _diagnostics.Report(IZErrorCode.NotADevice, indexed.Span,
+                    "'" + device.Name + "' is " + device.Description +
+                    ", which reaches several devices; a slot belongs to one, so read it " +
+                    "through a device on a pin");
+                Emit(OpCode.PushZero, 0, 0, line);
+                return IZType.Error;
+            }
+
             if (!GameEnums.LogicSlotTypeByName.TryGetValue(member.MemberName, out int slotLogicType))
             {
                 _diagnostics.Report(IZErrorCode.UnknownLogicType, member.MemberToken.Span,
@@ -2214,6 +2339,45 @@ namespace IZLang.Binding
 
             Emit(OpCode.LoadHeap, 0, 0, line);
             return elementType;
+        }
+
+        /// <summary>
+        /// Pushes the operands for a device declared from a selector. The hashes were
+        /// folded when the name was declared, so this is two constants and no work.
+        /// </summary>
+        private void EmitDeviceSelectorOperands(DeviceSymbol device, int line)
+        {
+            EmitConstant(device.PrefabHash, line);
+            if (device.HasLabel) EmitConstant(device.LabelHash, line);
+        }
+
+        /// <summary>
+        /// 'lights.On = true;' where 'lights' is a batch device - the same write the
+        /// inline selector would do, and with the same restriction: a batch has no
+        /// single value to read back, so '+=' and its siblings have nothing to build on.
+        /// </summary>
+        private void EmitBatchDeviceAssignment(DeviceSymbol device, MemberExpression member,
+                                               AssignmentStatement assignment, int logicType, int line)
+        {
+            if (assignment.Kind != AssignmentKind.Assign)
+            {
+                _diagnostics.Report(IZErrorCode.InvalidAssignmentTarget, assignment.Span,
+                    "'" + device.Name + "' is " + device.Description +
+                    ", and a batch write does not accept '" + assignment.OperatorToken.Text +
+                    "'; read and write in separate steps");
+                return;
+            }
+
+            EmitDeviceSelectorOperands(device, line);
+
+            var valueType = EmitExpression(assignment.Value);
+            if (!valueType.IsAssignableTo(IZType.Num))
+            {
+                _diagnostics.Report(IZErrorCode.TypeMismatch, assignment.Value.Span,
+                    "a batch write takes num (or bool), not " + valueType.Display());
+            }
+
+            Emit(device.HasLabel ? OpCode.BatchNamedStore : OpCode.BatchStore, logicType, 0, line);
         }
 
         /// <summary>

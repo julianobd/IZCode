@@ -3,7 +3,8 @@
 //
 // The housing has only 6 pins (d0..d5). A batch operation reaches any number
 // of devices on the same data network, identified by the hash of the prefab
-// name - no data cable has to be run to each one.
+// name - with no pin spent on any of them. They do have to be on that network:
+// a selector saves pins, not cabling.
 //
 // There are three ways to write the hash, and they all produce the SAME
 // constant, computed at compile time (zero runtime cost):

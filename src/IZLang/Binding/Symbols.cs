@@ -225,15 +225,54 @@ namespace IZLang.Binding
         }
     }
 
+    /// <summary>
+    /// A name that stands for a device: either one housing pin, or a batch selector
+    /// that reaches every device matching it.
+    ///
+    /// Both shapes are settled at compile time. A pin is an instruction operand, and
+    /// a selector folds to the two hashes the batch instructions take, so naming a
+    /// group of devices costs exactly what writing the selector inline would.
+    /// </summary>
     public sealed class DeviceSymbol : Symbol
     {
         /// <summary>
         /// 0..5, matching d0..d5 on the housing, or <see cref="Vm.DevicePins.Housing"/>
-        /// for 'db' - the device the chip is installed in.
+        /// for 'db' - the device the chip is installed in. -1 for a batch device.
         /// </summary>
         public int Pin { get; }
 
-        public DeviceSymbol(string name, int pin) : base(name) { Pin = pin; }
+        /// <summary>Was this declared from 'all(...)' or 'named(...)' rather than a pin?</summary>
+        public bool IsBatch { get; }
+
+        /// <summary>true for 'named(...)', which filters by label as well.</summary>
+        public bool HasLabel { get; }
+
+        /// <summary>Prefab hash the selector folded to. 0 matches any prefab.</summary>
+        public double PrefabHash { get; }
+
+        /// <summary>Label hash the selector folded to. Only read when <see cref="HasLabel"/>.</summary>
+        public double LabelHash { get; }
+
+        /// <summary>The selector as it was written, for diagnostics and tooltips.</summary>
+        public string Description { get; }
+
+        public DeviceSymbol(string name, int pin) : base(name)
+        {
+            Pin = pin;
+            Description = Vm.DevicePins.Name(pin);
+        }
+
+        public DeviceSymbol(string name, bool hasLabel, double prefabHash, double labelHash,
+                            string description)
+            : base(name)
+        {
+            Pin = -1;
+            IsBatch = true;
+            HasLabel = hasLabel;
+            PrefabHash = prefabHash;
+            LabelHash = labelHash;
+            Description = description;
+        }
     }
 
     /// <summary>One field of a struct, at a fixed offset from the start of the instance.</summary>

@@ -108,6 +108,41 @@ restarts on the next tick and keeps trying. The moment the device is there it
 picks up again on its own and the LED goes out. Every other runtime error is a
 bug in the program: it stops for good, with the error line pointing at it.
 
+## Devices beyond the six pins
+
+Six pins run out long before the devices do. The same `device` declaration also
+takes a batch selector, so a group on the data network gets a name once and is
+used like anything else:
+
+```iz
+device led     = named(StructureDiode, #"led-dev");
+device lights  = all(StructureWallLight);
+device hangar  = named("hangar");          // any prefab carrying that label
+
+fn main() {
+    led.On = true;                 // reaches every device the selector matches
+    var s = lights.Setting;        // a batch read, averaged over all of them
+}
+```
+
+That is the point of it: a base with forty lights names them in one line instead
+of repeating the prefab and the label everywhere. The two hashes are folded when
+the name is declared, so `led.On = true` compiles to exactly what the inline
+`named(...)` form compiles to - naming the group costs nothing.
+
+What a selector saves is pins, not cabling. It reaches the devices on the same
+data network as the housing, exactly as a pin does, so the data cable still has
+to get there; what it drops is having to register each device in one of the six
+slots.
+
+Because a device is a fixed place in the world, both operands have to be known
+at compile time: a prefab name, a hash literal, a `const`, or text joined from
+them. A selector built from a running value is written where it is used, in the
+inline form. And two things a pin can do it cannot: `+=` on a property (a batch
+has no single value to read back) and `slot[i]` (a slot belongs to one device).
+
+See `samples/named-devices.iz`.
+
 ## Lists
 
 The chip has no allocator, and the heap is laid out at compile time. A `list` is
@@ -367,9 +402,9 @@ pump.|
       Pressure    r   = 101.325
 ```
 
-It also completes pins and `db` (`device x = ` shows what is on each one), prefab names
-inside `all(...)` and `#"..."`, slot properties, and the names declared in the
-program itself.
+It also completes pins and `db` (`device x = ` shows what is on each one, and
+offers `all` and `named` after them), prefab names inside `all(...)` and
+`#"..."`, slot properties, and the names declared in the program itself.
 
 `Tab` accepts the suggestion, `Ctrl`+arrows move through the list, `Esc` closes
 it, `Ctrl+Space` opens the full list. With the list closed, `Tab` goes back to
@@ -530,6 +565,8 @@ Working and covered by tests:
   lambdas inlined, and cells reserved at compile time for the four that have to
   see everything before they answer
 - device reads and writes, slots, batch operations by hash and by label
+- `device x = named(...)` and `device x = all(...)` - a name for a group on the
+  network, folded to its hashes at compile time and used like a device on a pin
 - `db`, the device the chip is installed in - the housing, or the hardsuit whose
   slot holds the chip, where the pins are the wearer's slots
 - `yield`, `sleep`, preemption by budget
@@ -551,5 +588,4 @@ Working and covered by tests:
 Not done yet:
 
 - persisting the VM state in the save
-- validating the prefab hash against a running game
 - multiplayer testing

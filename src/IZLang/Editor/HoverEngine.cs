@@ -158,6 +158,16 @@ namespace IZLang.Editor
             var lines = new List<string>();
             string title = symbol.Name;
 
+            // A batch device is not on a cable: there is no pin to inspect and no
+            // single reading to show, so the tooltip explains what it reaches.
+            if (symbol.BatchSelector != null)
+            {
+                lines.Add("every device matching this selector, on the same data network");
+                lines.Add("a read averages them; a write reaches all of them");
+                return new HoverInfo(HoverKind.Device, symbol.Name + " = " + symbol.BatchSelector,
+                                     lines, span);
+            }
+
             if (symbol.Pin < 0)
             {
                 lines.Add("device with no valid pin");

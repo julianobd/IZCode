@@ -17,9 +17,15 @@ namespace IZLang.Editor
 
         /// <summary>
         /// Pin 0..5, or <see cref="Vm.DevicePins.Housing"/> for 'db'. Only meaningful
-        /// for <see cref="DeclaredKind.Device"/>; -1 otherwise.
+        /// for <see cref="DeclaredKind.Device"/>; -1 otherwise, batch devices included.
         /// </summary>
         public int Pin { get; }
+
+        /// <summary>
+        /// The selector a batch device was declared from, as it was written -
+        /// 'named(StructureDiode, "led-dev")'. null for a device on a pin.
+        /// </summary>
+        public string? BatchSelector { get; }
 
         /// <summary>
         /// Base name of the declared type, with no brackets: 'num[3][2]' gives "num"
@@ -42,7 +48,8 @@ namespace IZLang.Editor
 
         public DeclaredSymbol(string name, DeclaredKind kind, SourceSpan nameSpan, int pin = -1,
                               string? typeName = null, int arrayDepth = 0,
-                              SourceSpan typeSpan = default, bool isList = false)
+                              SourceSpan typeSpan = default, bool isList = false,
+                              string? batchSelector = null)
         {
             Name = name;
             Kind = kind;
@@ -52,6 +59,7 @@ namespace IZLang.Editor
             ArrayDepth = arrayDepth;
             TypeSpan = typeSpan;
             IsList = isList;
+            BatchSelector = batchSelector;
         }
 
         public override string ToString() => Kind + " " + Name;
@@ -118,20 +126,26 @@ namespace IZLang.Editor
             {
                 switch (tokens[i].Kind)
                 {
-                    // device <name> = d<N> ;
+                    // device <name> = d<N> ;   or   device <name> = named(...) ;
                     case TokenKind.KwDevice:
                         if (i + 1 < tokens.Count && tokens[i + 1].Kind == TokenKind.Identifier)
                         {
                             int pin = -1;
-                            // The pin may not even have been typed yet.
-                            if (i + 3 < tokens.Count &&
-                                tokens[i + 2].Kind == TokenKind.Equals &&
-                                tokens[i + 3].Kind == TokenKind.Identifier)
+                            string? selector = null;
+
+                            // Neither the pin nor the selector may have been typed yet.
+                            if (i + 3 < tokens.Count && tokens[i + 2].Kind == TokenKind.Equals)
                             {
-                                TryParsePin(tokens[i + 3].Text, out pin);
+                                if (tokens[i + 3].Kind == TokenKind.Identifier)
+                                    TryParsePin(tokens[i + 3].Text, out pin);
+                                else if (tokens[i + 3].Kind == TokenKind.KwAll ||
+                                         tokens[i + 3].Kind == TokenKind.KwNamed)
+                                    selector = ReadSelectorText(tokens, i + 3);
                             }
+
                             symbols.Add(new DeclaredSymbol(
-                                tokens[i + 1].Text, DeclaredKind.Device, tokens[i + 1].Span, pin));
+                                tokens[i + 1].Text, DeclaredKind.Device, tokens[i + 1].Span, pin,
+                                batchSelector: selector));
                         }
                         break;
 
@@ -367,6 +381,41 @@ namespace IZLang.Editor
 
                 i++;
             }
+        }
+
+        /// <summary>
+        /// Rebuilds 'named(StructureDiode, "led-dev")' from the tokens, for the
+        /// tooltip. Stops at the closing parenthesis, or at the end of the statement
+        /// when it is still being typed.
+        /// </summary>
+        private static string ReadSelectorText(IReadOnlyList<Token> tokens, int keywordIndex)
+        {
+            var text = new System.Text.StringBuilder(tokens[keywordIndex].Text);
+            int depth = 0;
+
+            for (int i = keywordIndex + 1; i < tokens.Count; i++)
+            {
+                var token = tokens[i];
+                if (token.Kind == TokenKind.Semicolon || token.Kind == TokenKind.EndOfFile) break;
+
+                switch (token.Kind)
+                {
+                    case TokenKind.LParen: depth++; break;
+                    case TokenKind.RParen: depth--; break;
+                    case TokenKind.Comma: text.Append(','); continue;
+                }
+
+                if (token.Kind != TokenKind.LParen && token.Kind != TokenKind.RParen &&
+                    text.Length > 0 && text[text.Length - 1] != '(')
+                {
+                    text.Append(' ');
+                }
+
+                text.Append(token.Kind == TokenKind.String ? "\"" + token.StringValue + "\"" : token.Text);
+                if (depth == 0) break;
+            }
+
+            return text.ToString();
         }
 
         /// <summary>'d0'..'d5' - the housing pins - and 'db', the device holding the chip.</summary>

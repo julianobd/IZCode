@@ -81,6 +81,7 @@ there would be nothing left to infer from.
 device pump   = d0;            // housing pin
 device sensor = d1;
 device self   = db;            // the device the chip is installed in
+device lights = named(StructureWallLight, #"hangar");   // a group on the network
 ```
 
 The six pins reach whatever is wired to the housing. `db` reaches the housing
@@ -96,6 +97,9 @@ There the six pins are the wearer's slots rather than cables:
 |---|---|---|
 | `d0`–`d5` | the six wired devices | helmet, backpack, toolbelt, glasses, left hand, right hand |
 | `db` | the housing | the suit |
+
+A device name can also stand for a batch selector rather than a pin, which is
+how a program reaches more than six devices. See [3.4](#34-devices-on-the-network).
 
 Reading and writing go through property access, validated at compile time
 against the game's `LogicType` table:
@@ -119,8 +123,9 @@ with no runtime cost. It is the same value as IC10's `HASH("...")`.
 ### 3.3 Batch operations
 
 The housing has only six pins. A batch operation reaches any number of devices
-on the same data network, identified by the **prefab hash**, with no cable
-needed to each one.
+on the same data network, identified by the **prefab hash**, with no pin spent
+on any of them. It can be written where it is used, as below, or given a
+name once with `device` - see [3.4](#34-devices-on-the-network).
 
 ```iz
 all(StructureWallLight).On = true;             // every device of that prefab
@@ -182,6 +187,55 @@ a name the program itself assembles:
 var wing = "north";
 named("vent-" + wing).On = true;      // hashed at runtime
 ```
+
+### 3.4 Devices on the network
+
+A selector can be given a name, with the same `device` declaration that binds a
+pin:
+
+```iz
+device led     = named(StructureDiode, #"led-dev");
+device lights  = all(StructureWallLight);
+device hangar  = named("hangar");            // any prefab carrying that label
+```
+
+From there the name is used exactly like a device on a pin:
+
+```iz
+led.On = true;                    // reaches every matching device
+var p = lights.Setting;           // averaged over all of them, as a batch read is
+```
+
+This is what a base with forty lights needs. The six pins run out long before
+the devices do, and writing the prefab and the label once at the top of the file
+keeps a typo in one place instead of on every line that mentions them.
+
+A selector spends no pin, but it reaches no further than a pin does: it matches
+the devices on the same data network as the housing, so the data cable still has
+to get there. A device the network never reached is not addressable at all, by a
+name or otherwise, and a batch that matches nothing writes nothing - the VM logs
+a warning rather than letting it pass for a value of zero.
+
+Both operands have to be known at compile time - a prefab name, a hash literal,
+a `const`, or text joined from them. A device is a name for a fixed place in the
+world, so it cannot depend on a value the program computes:
+
+```iz
+var wing = "north";
+device vents = named("vent-" + wing);   // error: not known at compile time
+named("vent-" + wing).On = true;        // fine: the selector written where it is used
+```
+
+The declaration costs nothing at runtime: the two hashes are folded when the
+name is declared, so `led.On = true` compiles to exactly what the inline
+`named(...)` form compiles to.
+
+Two things a pin can do that a selector cannot:
+
+| | pin | selector |
+|---|---|---|
+| `pump.Setting += 1` | yes | no - a batch has no single value to read back |
+| `chute.slot[0].Quantity` | yes | no - a slot belongs to one device |
 
 ---
 
@@ -393,7 +447,8 @@ Two structs with the same fields are still different types: what matches is the
 declaration, not the shape.
 
 Fields may be `num`, `bool`, `str`, an array, or another struct. A field is
-never a `dev` - a device is a pin (or `db`) known at compile time, not a value.
+never a `dev` - a device is a pin (or a selector) settled at compile time, not a
+value.
 
 ### 10.3 What cannot be done
 

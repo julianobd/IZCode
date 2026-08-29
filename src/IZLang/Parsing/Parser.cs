@@ -378,6 +378,15 @@ namespace IZLang.Parsing
             var name = Expect(TokenKind.Identifier);
             Expect(TokenKind.Equals);
 
+            // device led = named(StructureDiode, "led-dev");  -  the name stands for
+            // the whole selector, so every read and write on it is a batch operation.
+            if (Check(TokenKind.KwAll) || Check(TokenKind.KwNamed))
+            {
+                var selector = (BatchSelectorExpression)ParseBatchSelector();
+                var end = Expect(TokenKind.Semicolon);
+                return new DeviceDeclaration(name, selector, keyword.Span.To(end.Span));
+            }
+
             var pinToken = Current;
             int pin = -1;
 
@@ -388,8 +397,8 @@ namespace IZLang.Parsing
             else
             {
                 _diagnostics.Report(IZErrorCode.InvalidDevicePin, pinToken.Span,
-                    "expected a pin from 'd0' to 'd5', or 'db' for the device the chip " +
-                    "is installed in, found " + Describe(pinToken));
+                    "expected a pin from 'd0' to 'd5', 'db' for the device the chip " +
+                    "is installed in, or 'all(...)' / 'named(...)', found " + Describe(pinToken));
                 if (!Check(TokenKind.Semicolon)) Advance();
             }
 

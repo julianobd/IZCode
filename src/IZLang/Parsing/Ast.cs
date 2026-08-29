@@ -284,7 +284,13 @@ namespace IZLang.Parsing
         }
     }
 
-    /// <summary>device pump = d0;  /  device suit = db;</summary>
+    /// <summary>
+    /// device pump = d0;  /  device suit = db;  /  device led = named(StructureDiode, "led");
+    ///
+    /// The first two forms bind a housing pin. The third binds a batch selector, so
+    /// the name stands for every device the selector reaches rather than for one
+    /// cable.
+    /// </summary>
     public sealed class DeviceDeclaration : StatementSyntax
     {
         public Token NameToken { get; }
@@ -292,16 +298,28 @@ namespace IZLang.Parsing
 
         /// <summary>
         /// Pin index: 0 for d0 ... 5 for d5, <see cref="Vm.DevicePins.Housing"/> for
-        /// 'db'. -1 when invalid.
+        /// 'db'. -1 when invalid, and also when the device is a batch selector.
         /// </summary>
         public int Pin { get; }
         public Token PinToken { get; }
+
+        /// <summary>The 'all(...)' or 'named(...)' this name stands for. null for a pin.</summary>
+        public BatchSelectorExpression? Selector { get; }
 
         public DeviceDeclaration(Token name, int pin, Token pinToken, SourceSpan span)
         {
             NameToken = name;
             Pin = pin;
             PinToken = pinToken;
+            Span = span;
+        }
+
+        public DeviceDeclaration(Token name, BatchSelectorExpression selector, SourceSpan span)
+        {
+            NameToken = name;
+            Pin = -1;
+            PinToken = name;
+            Selector = selector;
             Span = span;
         }
     }

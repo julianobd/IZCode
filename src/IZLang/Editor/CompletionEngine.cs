@@ -577,6 +577,13 @@ namespace IZLang.Editor
 
                 items.Add(new CompletionItem(DevicePins.Name(pin), CompletionKind.Pin, detail, span, pin));
             }
+
+            // A device does not have to sit on a cable: a selector names a whole group
+            // on the data network. It goes after the pins, which are the common case.
+            items.Add(new CompletionItem("all", CompletionKind.Keyword,
+                "all(Prefab) - every device of that prefab", span, DevicePins.Count));
+            items.Add(new CompletionItem("named", CompletionKind.Keyword,
+                "named(\"label\") or named(Prefab, \"label\")", span, DevicePins.Count + 1));
         }
 
         private static void AddDeviceProperties(List<CompletionItem> items, SourceSpan span,
@@ -696,7 +703,8 @@ namespace IZLang.Editor
                     case DeclaredKind.Device:
                     {
                         var device = symbol.Pin >= 0 ? environment.GetWiredDevice(symbol.Pin) : null;
-                        string detail = symbol.Pin >= 0 ? DevicePins.Name(symbol.Pin) : "d?";
+                        string detail = symbol.BatchSelector
+                            ?? (symbol.Pin >= 0 ? DevicePins.Name(symbol.Pin) : "d?");
                         if (device != null) detail += " - " + device.DisplayName;
                         items.Add(new CompletionItem(symbol.Name, CompletionKind.Device, detail, span, 0));
                         break;

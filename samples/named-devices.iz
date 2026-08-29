@@ -1,0 +1,52 @@
+#iz
+// A device does not have to sit on one of the six pins.
+//
+// 'device x = d0;' names one of the six housing pins. 'device x = named(...)'
+// and 'device x = all(...)' name a group on the data network instead, and from
+// there on the code reads the same: 'x.On = true' works whether x is a pin or
+// a selector.
+//
+// This is what makes a base with forty lights readable. The label is set on the
+// device with a labeller, the prefab and the label are written once at the top,
+// and the rest of the program talks about 'greenhouse_lights', not about hashes.
+//
+// A selector saves pins, not cabling: it reaches the devices on the same data
+// network as the housing, exactly as a pin does.
+
+// Two ways to write the prefab: the bare name, or a hash literal.
+device greenhouse_lights = named(StructureWallLight, #"greenhouse");
+device greenhouse_vents  = named(StructureActiveVent, #"greenhouse");
+device greenhouse_sensor = named(StructureGasSensor, #"greenhouse");
+
+// Without a prefab, the label alone matches any kind of device carrying it.
+device night_shutters = named(#"greenhouse-shutter");
+
+// And 'all' takes every device of the prefab, labelled or not.
+device every_light = all(StructureWallLight);
+
+const TARGET_PRESSURE = 101.325;   // kPa
+const DARK = 0.2;
+
+fn main() {
+    loop {
+        // A read on a selector averages every device it reaches. With one sensor
+        // in the greenhouse that is simply the sensor's reading.
+        var pressure = greenhouse_sensor.Pressure;
+
+        // A write reaches all of them at once, without spending a pin on any.
+        greenhouse_vents.On = pressure > TARGET_PRESSURE;
+
+        // A bool becomes a num on the way to a device property.
+        var dark = greenhouse_sensor.SolarAngle < DARK;
+        greenhouse_lights.On = dark;
+        night_shutters.Open = !dark;
+
+        yield;
+    }
+}
+
+// A selector device is settled when it is declared, so it can be used from any
+// function without being passed around.
+fn all_lights_off() {
+    every_light.On = false;
+}

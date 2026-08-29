@@ -136,8 +136,11 @@ namespace IZLang.Tests
         {
             var result = Complete("device pump = |");
 
+            // The pins come first; the two selectors follow, because a device does not
+            // have to be on a cable.
             Assert.Equal(CompletionContext.Pin, result.Context);
-            Assert.Equal(new[] { "d0", "d1", "d2", "d3", "d4", "d5", "db" }, Labels(result));
+            Assert.Equal(new[] { "d0", "d1", "d2", "d3", "d4", "d5", "db", "all", "named" },
+                         Labels(result));
         }
 
         [Fact]

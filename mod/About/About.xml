@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>IZCode</Name>
   <Author>julianobd</Author>
-  <Version>0.1.2</Version>
+  <Version>0.1.3</Version>
   <ModID>izcode</ModID>
   <Description>[h1]IZCode — Structured Programming for Stationeers[/h1]
 
@@ -132,7 +132,7 @@ Presure
 
 [b]Error:[/b] Unknown device property. Did you mean [b]Pressure?[/b]
 
-[b]db[/b] is the device the chip is installed in, and the only way to reach it: nothing can be wired to it. In a circuit housing it is the housing. In a hardsuit, which holds a chip in its own slot, it is the suit, so a program can read its own PressureExternal and drive its own AC. On a suit the six pins are the wearer's slots: d0 helmet, d1 backpack, d2 toolbelt, d3 glasses, d4 and d5 hands.
+[b]db[/b] is the device the chip is installed in, and the only way to reach it: nothing can be wired to it. In a circuit housing it is the housing; in a hardsuit, which holds a chip in its own slot, it is the suit, so a program can read its own PressureExternal and drive its AC. On a suit the six pins are the wearer's slots: d0 helmet, d1 backpack, d2 toolbelt, d3 glasses, d4 and d5 hands.
 
 [code]
 device self = db;
@@ -149,6 +149,13 @@ named("Corridor Light").On = false;
 named(StructureVolumePump, "north").On = true;
 
 var avg = all(StructureGasSensor).Pressure;
+[/code]
+
+A selector can also be given a name, and is then used like a device on a pin:
+
+[code]
+device led = named(StructureDiode, #"led-dev");
+led.On = true;
 [/code]
 
 Prefab names, [code]#"hash"[/code] literals and constants are compile-time values with zero runtime cost.
@@ -266,9 +273,7 @@ Example programs are included in [code]samples/[/code], covering pressure contro
 
 [b]Multiplayer has NOT been tested.[/b]
 
-Only single player has been tested. Every client and the server need the mod installed. VM behavior in multiplayer is currently unknown.
-
-Use it at your own risk and report your findings on the issue tracker.
+Every client and the server need the mod installed, and VM behavior in multiplayer is currently unknown. Use it at your own risk and report your findings on the issue tracker.
 
 [h2]LINKS[/h2]
 
@@ -283,36 +288,24 @@ Use it at your own risk and report your findings on the issue tracker.
 [i]IZCode — Structured programming for Stationeers.[/i]
 </Description>
   <ChangeLog>
-===== 0.1.1 =========================================================
+===== 0.1.3 =========================================================
 
-LISTS. A new type: 'list T[N]' is an array plus how much of it is in use, so a
-program can hold a growing set of rooms, sensors or readings without tracking
-the count by hand.
+DEVICES BEYOND THE SIX PINS. The six housing pins run out long before the
+devices do. The same 'device' declaration now also takes a batch selector, so a
+group on the data network gets a name once and is used like anything else:
 
-    var rooms: list Room[8];        // room for eight, holding none
-    var r: Room;   r.temp = 40;
-    rooms.add(r);                   // add, remove, removeAt, clear, count
+    device greenhouse_lights = named(StructureWallLight, #"greenhouse");
+    device every_light       = all(StructureWallLight);
+    device hangar            = named("hangar");   // any prefab with that label
 
-QUERIES, LINQ STYLE. A list answers what you would otherwise write a loop for:
+    greenhouse_lights.On = true;      // reaches every device it matches
+    var p = greenhouse_sensor.Pressure;   // a batch read, averaged over them
 
-    var mean  = rooms.avg(x =&gt; x.temp);          // one number
-    var hot   = rooms.where(x =&gt; x.temp &gt; 30);   // a list of its own
-    var worst = rooms.orderByDesc(x =&gt; x.temp).first();
+What a selector saves is pins, not cabling: it reaches the devices on the same
+data network as the housing, exactly as a pin does.
 
-    where select take skip takeWhile skipWhile orderBy orderByDesc reverse
-    distinct sum avg min max count any all first last firstOr lastOr
-    contains indexOf into
-
-A whole chain becomes ONE loop over the cells with the lambdas inlined: no
-intermediate list between one method and the next, and no call per element.
-orderBy, orderByDesc and distinct reserve cells of their own, sized at compile
-time, so nothing is allocated while the chip runs.
-
-EDITOR. Completion offers the query methods of a list as you type the dot, and
-the new keywords join the syntax highlighting and hover.
-
-SAMPLE. samples/queries.iz walks through the whole set, from a plain count to a
-sorted top of the list.
+SAMPLE. samples/named-devices.iz runs a greenhouse off labelled groups - lights,
+vents, shutters and a sensor - none of them costing a pin.
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>
