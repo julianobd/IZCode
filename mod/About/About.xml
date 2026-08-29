@@ -181,6 +181,39 @@ it at your own risk, and report what you find on the tracker below.
 
 Source code:  https://github.com/julianobd/IZCode
 Bug reports:  https://github.com/julianobd/IZCode/issues</Description>
+  <ChangeLog>
+===== 0.1.1 =========================================================
+
+LISTS. A new type: 'list T[N]' is an array plus how much of it is in use, so a
+program can hold a growing set of rooms, sensors or readings without tracking
+the count by hand.
+
+    var rooms: list Room[8];        // room for eight, holding none
+    var r: Room;   r.temp = 40;
+    rooms.add(r);                   // add, remove, removeAt, clear, count
+
+QUERIES, LINQ STYLE. A list answers what you would otherwise write a loop for:
+
+    var mean  = rooms.avg(x =&gt; x.temp);          // one number
+    var hot   = rooms.where(x =&gt; x.temp &gt; 30);   // a list of its own
+    var worst = rooms.orderByDesc(x =&gt; x.temp).first();
+
+    where select take skip takeWhile skipWhile orderBy orderByDesc reverse
+    distinct sum avg min max count any all first last firstOr lastOr
+    contains indexOf into
+
+A whole chain becomes ONE loop over the cells with the lambdas inlined: no
+intermediate list between one method and the next, and no call per element.
+orderBy, orderByDesc and distinct reserve cells of their own, sized at compile
+time, so nothing is allocated while the chip runs.
+
+EDITOR. Completion offers the query methods of a list as you type the dot, and
+the new keywords join the syntax highlighting and hover.
+
+SAMPLE. samples/queries.iz walks through the whole set, from a plain count to a
+sorted top of the list.
+  </ChangeLog>
+  <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>
     <Tag>Scripting</Tag>
   </Tags>
