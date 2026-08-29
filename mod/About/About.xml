@@ -37,7 +37,7 @@ const TARGET = 101.325;
 fn main() {
   loop {
     var p = sensor.Pressure;
-    inlet.On = p < TARGET - 5.0;
+    inlet.On = p &lt; TARGET - 5.0;
     yield;
   }
 }
