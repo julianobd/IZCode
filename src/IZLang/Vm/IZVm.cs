@@ -397,7 +397,7 @@ namespace IZLang.Vm
                     {
                         if (!_host.TryReadDevice(instruction.A, instruction.B, out double value))
                             return Fail(RuntimeErrorKind.DeviceNotConnected,
-                                "no device connected on pin d" + instruction.A);
+                                NotConnected(instruction.A));
                         if (!Push(value)) return State;
                         break;
                     }
@@ -407,7 +407,7 @@ namespace IZLang.Vm
                         double value = _stack[--_stackTop];
                         if (!_host.TryWriteDevice(instruction.A, instruction.B, value))
                             return Fail(RuntimeErrorKind.DeviceNotConnected,
-                                "no device connected on pin d" + instruction.A);
+                                NotConnected(instruction.A));
                         break;
                     }
                     case OpCode.DeviceSlotLoad:
@@ -416,7 +416,7 @@ namespace IZLang.Vm
                         int slotIndex = (int)_stack[--_stackTop];
                         if (!_host.TryReadSlot(instruction.A, slotIndex, instruction.B, out double value))
                             return Fail(RuntimeErrorKind.DeviceNotConnected,
-                                "no device connected on pin d" + instruction.A);
+                                NotConnected(instruction.A));
                         if (!Push(value)) return State;
                         break;
                     }
@@ -960,6 +960,15 @@ namespace IZLang.Vm
             double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
                 ? value
                 : double.NaN;
+
+        /// <summary>
+        /// 'db' fails for a different reason than a pin does - there is no cable to
+        /// check - so it gets its own wording instead of "pin db is empty".
+        /// </summary>
+        private static string NotConnected(int pin) =>
+            pin == DevicePins.Housing
+                ? "the chip is not installed in a device, so 'db' reads nothing"
+                : "no device connected on pin " + DevicePins.Name(pin);
 
         private ExecutionResult Underflow() =>
             Fail(RuntimeErrorKind.StackUnderflow, "empty stack (a compiler bug, not a bug in your code)");

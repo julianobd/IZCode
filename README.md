@@ -73,6 +73,32 @@ That is **one loop** over the cells, with the lambdas inlined into it: nothing i
 allocated between one method and the next, and there is no call per element. See
 [Lists](#lists), [Queries](#queries) and `samples/queries.iz`.
 
+## Devices, and the one the chip is in
+
+The six pins reach whatever is wired to the housing. `db` reaches the housing
+itself:
+
+```iz
+device sensor = d0;            // wired to the housing
+device self   = db;            // the housing the chip is installed in
+```
+
+Nothing can be wired to the thing the chip is already inside, so `db` is the
+only way to it. What it turns out to be depends on where the chip went: in a
+circuit housing it is the housing, and in a **hardsuit**, which holds a chip in
+its own slot, it is the suit. That is what lets a suit read its own
+`PressureExternal` and drive its own AC. On a suit the six pins are the wearer's
+slots rather than cables:
+
+| pin | on a circuit housing | on a suit |
+|---|---|---|
+| `d0`–`d5` | the six wired devices | helmet, backpack, toolbelt, glasses, left hand, right hand |
+| `db` | the housing | the suit |
+
+`db` is a device like any other: its properties are checked at compile time,
+completion knows them, and hover shows their live values. See
+`samples/self-device.iz` and `samples/hardsuit.iz`.
+
 ## Lists
 
 The chip has no allocator, and the heap is laid out at compile time. A `list` is
@@ -321,8 +347,8 @@ with the caret on the same line. And if building the panel fails for any reason,
 the original editor never leaves the stage.
 
 **Completion that knows your wiring.** The editor is opened by the Programmable
-Chip Motherboard, which knows which CircuitHousing is selected, and the housing
-knows what is wired to each pin. Typing `pump.` suggests the properties of
+Chip Motherboard, which knows which holder is selected, and the holder knows
+what is on each pin and what `db` is. Typing `pump.` suggests the properties of
 **that pump**, with its current value alongside, instead of all 358 in the game:
 
 ```
@@ -332,7 +358,7 @@ pump.|
       Pressure    r   = 101.325
 ```
 
-It also completes pins (`device x = ` shows what is on each one), prefab names
+It also completes pins and `db` (`device x = ` shows what is on each one), prefab names
 inside `all(...)` and `#"..."`, slot properties, and the names declared in the
 program itself.
 
@@ -495,6 +521,8 @@ Working and covered by tests:
   lambdas inlined, and cells reserved at compile time for the four that have to
   see everything before they answer
 - device reads and writes, slots, batch operations by hash and by label
+- `db`, the device the chip is installed in - the housing, or the hardsuit whose
+  slot holds the chip, where the pins are the wearer's slots
 - `yield`, `sleep`, preemption by budget
 - a runtime `str`: `+`, `+=`, the six comparisons, and a text library, with a
   string table that interns what repeats and collects what nobody points at

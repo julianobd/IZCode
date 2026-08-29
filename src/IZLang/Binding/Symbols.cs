@@ -227,7 +227,10 @@ namespace IZLang.Binding
 
     public sealed class DeviceSymbol : Symbol
     {
-        /// <summary>0..5, matching d0..d5 on the circuit housing.</summary>
+        /// <summary>
+        /// 0..5, matching d0..d5 on the housing, or <see cref="Vm.DevicePins.Housing"/>
+        /// for 'db' - the device the chip is installed in.
+        /// </summary>
         public int Pin { get; }
 
         public DeviceSymbol(string name, int pin) : base(name) { Pin = pin; }

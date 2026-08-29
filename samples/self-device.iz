@@ -1,0 +1,31 @@
+#iz
+// 'db' - the device the chip is installed in.
+//
+// The six pins reach what is wired to the housing. 'db' reaches the housing
+// itself, which nothing can be wired to, so it is the only way a program can
+// read and drive the thing it is running inside.
+//
+// It costs nothing to use: it is a device like any other, so its properties are
+// checked at compile time and completion knows them.
+//
+//   db = this circuit housing
+//   d0 = a light
+
+device self  = db;
+device light = d0;
+
+fn main() {
+    loop {
+        // Reading its own state. The housing exposes Setting, which the player
+        // sets by hand on the screen, so it works as a knob for the program.
+        var knob = self.Setting;
+
+        light.On = knob > 0;
+
+        // Writing to itself. Error shows on the housing screen, so the program
+        // can report to whoever walks past it.
+        self.Error = knob < 0;
+
+        yield;
+    }
+}

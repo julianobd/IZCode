@@ -284,13 +284,16 @@ namespace IZLang.Parsing
         }
     }
 
-    /// <summary>device pump = d0;</summary>
+    /// <summary>device pump = d0;  /  device suit = db;</summary>
     public sealed class DeviceDeclaration : StatementSyntax
     {
         public Token NameToken { get; }
         public string Name => NameToken.Text;
 
-        /// <summary>Pin index: 0 for d0 ... 5 for d5. -1 when invalid.</summary>
+        /// <summary>
+        /// Pin index: 0 for d0 ... 5 for d5, <see cref="Vm.DevicePins.Housing"/> for
+        /// 'db'. -1 when invalid.
+        /// </summary>
         public int Pin { get; }
         public Token PinToken { get; }
 

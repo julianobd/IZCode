@@ -5,6 +5,7 @@ using IZLang.Binding;
 using IZLang.Devices;
 using IZLang.Diagnostics;
 using IZLang.Lexing;
+using IZLang.Vm;
 
 namespace IZLang.Editor
 {
@@ -163,14 +164,19 @@ namespace IZLang.Editor
                 return new HoverInfo(HoverKind.Device, title, lines, span);
             }
 
-            title = symbol.Name + " = d" + symbol.Pin;
+            title = symbol.Name + " = " + DevicePins.Name(symbol.Pin);
 
             var device = environment.GetWiredDevice(symbol.Pin);
             if (device == null)
             {
-                lines.Add("pin d" + symbol.Pin + " is empty - nothing connected");
+                lines.Add(symbol.Pin == DevicePins.Housing
+                    ? "the chip is not installed in a device"
+                    : "pin " + DevicePins.Name(symbol.Pin) + " is empty - nothing connected");
                 return new HoverInfo(HoverKind.Device, title, lines, span);
             }
+
+            if (symbol.Pin == DevicePins.Housing)
+                lines.Add("the device the chip is installed in");
 
             string? label = environment.GetWiredDeviceLabel(symbol.Pin);
             lines.Add(label != null
@@ -219,9 +225,14 @@ namespace IZLang.Editor
             var device = environment.GetWiredDevice(pin);
             var lines = new List<string>();
 
+            if (pin == DevicePins.Housing)
+                lines.Add("the device the chip is installed in");
+
             if (device == null)
             {
-                lines.Add("empty pin");
+                lines.Add(pin == DevicePins.Housing
+                    ? "the chip is not installed in a device"
+                    : "empty pin");
             }
             else
             {
@@ -230,7 +241,7 @@ namespace IZLang.Editor
                 lines.Add(device.PrefabName);
             }
 
-            return new HoverInfo(HoverKind.Device, "d" + pin, lines, span);
+            return new HoverInfo(HoverKind.Device, DevicePins.Name(pin), lines, span);
         }
 
         /// <summary>Property after the dot: 'pump.Pressure', 'x.slot[0].Quantity'.</summary>
@@ -365,7 +376,9 @@ namespace IZLang.Editor
         {
             switch (kind)
             {
-                case TokenKind.KwDevice: return "binds a name to a housing pin (d0..d5)";
+                case TokenKind.KwDevice:
+                    return "binds a name to a housing pin (d0..d5), or to 'db' - " +
+                           "the device the chip is installed in";
                 case TokenKind.KwVar: return "declares a variable";
                 case TokenKind.KwConst: return "declares a constant, computed at compile time";
                 case TokenKind.KwFn: return "declares a function";

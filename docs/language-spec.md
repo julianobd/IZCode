@@ -40,7 +40,7 @@ Execution starts at `fn main()`. When `main` returns, the chip stops (state
 | `num` | 64-bit floating point (IEEE-754). The one numeric type. |
 | `bool` | `true` / `false` |
 | `str` | ASCII text, immutable, built and compared while the program runs (section 11) |
-| `dev` | device handle (pin `d0`–`d5`, or a reference by id) |
+| `dev` | device handle (pin `d0`–`d5`, `db`, or a reference by id) |
 | `T[N]` | array of exactly `N` values of type `T` (section 10) |
 | `list T[N]` | up to `N` values of type `T`, and how many are in use (section 12) |
 | a `struct` | a group of named fields, declared by the program (section 10) |
@@ -80,7 +80,22 @@ there would be nothing left to infer from.
 ```iz
 device pump   = d0;            // housing pin
 device sensor = d1;
+device self   = db;            // the device the chip is installed in
 ```
+
+The six pins reach whatever is wired to the housing. `db` reaches the housing
+itself, and is the only way to it: nothing can be wired to the thing the chip is
+already inside.
+
+What `db` turns out to be depends on where the chip went. In a circuit housing
+it is the housing. In a hardsuit, which holds a chip in its own slot, it is the
+suit - so a program can read the suit's `PressureExternal` and drive its AC.
+There the six pins are the wearer's slots rather than cables:
+
+| pin | on a circuit housing | on a suit |
+|---|---|---|
+| `d0`–`d5` | the six wired devices | helmet, backpack, toolbelt, glasses, left hand, right hand |
+| `db` | the housing | the suit |
 
 Reading and writing go through property access, validated at compile time
 against the game's `LogicType` table:
@@ -378,7 +393,7 @@ Two structs with the same fields are still different types: what matches is the
 declaration, not the shape.
 
 Fields may be `num`, `bool`, `str`, an array, or another struct. A field is
-never a `dev` - a device is a pin known at compile time, not a value.
+never a `dev` - a device is a pin (or `db`) known at compile time, not a value.
 
 ### 10.3 What cannot be done
 

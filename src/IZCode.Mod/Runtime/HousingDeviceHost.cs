@@ -9,10 +9,15 @@ using UnityEngine;
 namespace IZCode.Mod.Runtime
 {
     /// <summary>
-    /// Wires the <see cref="IZVm"/> to the real CircuitHousing.
+    /// Wires the <see cref="IZVm"/> to the real housing.
     ///
     /// All the VM's conversation with the game goes through here - and only here. That
     /// is what lets the compiler and the VM be tested without Stationeers running.
+    ///
+    /// Everything goes through <see cref="ICircuitHolder"/> rather than through the
+    /// concrete CircuitHousing, because a circuit housing is not the only thing that
+    /// takes a chip: a hardsuit holds one too, and there d0..d5 are the wearer's
+    /// helmet, backpack, toolbelt, glasses and hands instead of six cables.
     /// </summary>
     public sealed class HousingDeviceHost : IDeviceHost
     {
@@ -25,11 +30,37 @@ namespace IZCode.Mod.Runtime
 
         public double CurrentTime => Time.time;
 
+        /// <summary>
+        /// The device a pin points at, asking the holder itself rather than reading its
+        /// Devices array: only the holder knows what its indices mean, and only it
+        /// checks that the device is still on the same data network.
+        /// </summary>
         private ILogicable? GetDevice(int pin)
         {
-            if (pin < 0 || pin > 5) return null;
-            return _housing is CircuitHousing housing ? housing.Devices[pin] : null;
+            if (!DevicePins.IsValid(pin)) return null;
+
+            try
+            {
+                // The network index is passed explicitly: the holder only hands back
+                // itself for 'db' when no particular network was asked for, and relying
+                // on an interface method's default argument is not worth the risk.
+                return _housing?.GetLogicableFromIndex(GameIndex(pin), int.MinValue);
+            }
+            catch
+            {
+                // A holder with no wearer (a suit lying on the floor) throws rather
+                // than returning null. To the program that is an empty pin.
+                return null;
+            }
         }
+
+        /// <summary>
+        /// Translates our pin numbering into the game's. We number 'db' as
+        /// <see cref="DevicePins.Housing"/> = 6 so that the compiler and the editor keep
+        /// working on small contiguous indices; the game marks it with int.MaxValue.
+        /// </summary>
+        private static int GameIndex(int pin) =>
+            pin == DevicePins.Housing ? int.MaxValue : pin;
 
         public bool TryReadDevice(int pin, int logicType, out double value)
         {
@@ -77,8 +108,7 @@ namespace IZCode.Mod.Runtime
         //  Batch operations
         // ------------------------------------------------------------------
 
-        private List<ILogicable>? GetBatch() =>
-            _housing is CircuitHousing housing ? housing.GetBatchOutput() : null;
+        private List<ILogicable>? GetBatch() => _housing?.GetBatchOutput();
 
         public bool TryBatchRead(double prefabHash, int logicType, BatchAggregation aggregation, out double value) =>
             Aggregate(GetBatch(), (int)prefabHash, nameHash: null, (LogicType)logicType, aggregation, out value);

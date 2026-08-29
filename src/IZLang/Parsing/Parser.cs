@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IZLang.Diagnostics;
 using IZLang.Lexing;
+using IZLang.Vm;
 
 namespace IZLang.Parsing
 {
@@ -380,30 +381,20 @@ namespace IZLang.Parsing
             var pinToken = Current;
             int pin = -1;
 
-            if (Check(TokenKind.Identifier) && IsPinName(pinToken.Text, out pin))
+            if (Check(TokenKind.Identifier) && DevicePins.TryParse(pinToken.Text, out pin))
             {
                 Advance();
             }
             else
             {
                 _diagnostics.Report(IZErrorCode.InvalidDevicePin, pinToken.Span,
-                    "expected a pin from 'd0' to 'd5', found " + Describe(pinToken));
+                    "expected a pin from 'd0' to 'd5', or 'db' for the device the chip " +
+                    "is installed in, found " + Describe(pinToken));
                 if (!Check(TokenKind.Semicolon)) Advance();
             }
 
             var semi = Expect(TokenKind.Semicolon);
             return new DeviceDeclaration(name, pin, pinToken, keyword.Span.To(semi.Span));
-        }
-
-        /// <summary>d0..d5 - the six pins of the circuit housing.</summary>
-        private static bool IsPinName(string text, out int pin)
-        {
-            pin = -1;
-            if (text.Length != 2 || text[0] != 'd') return false;
-            char digit = text[1];
-            if (digit < '0' || digit > '5') return false;
-            pin = digit - '0';
-            return true;
         }
 
         private StatementSyntax ParseIf()

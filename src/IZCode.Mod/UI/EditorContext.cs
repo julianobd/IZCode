@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
+using Assets.Scripts.Objects.Clothing;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Motherboards;
 using Assets.Scripts.UI;
@@ -19,13 +20,17 @@ namespace IZCode.Mod.UI
     /// Works out what the code editor is editing right now.
     ///
     /// The game's editor (<see cref="InputSourceCode"/>) is opened by the Programmable
-    /// Chip Motherboard, not by the CircuitHousing - and the motherboard picks the
-    /// target housing through a dropdown. The whole chain is private, so we get there
-    /// by reflection:
+    /// Chip Motherboard, not by the holder - and the motherboard picks the target
+    /// holder through a dropdown. The whole chain is private, so we get there by
+    /// reflection:
     ///
-    ///   InputSourceCode.Instance.PCM            the open motherboard
-    ///     ._circuitHolders[_dropdown.Selected]  the selected housing
-    ///       .Devices[0..5] / .ProgrammableChip  what completion needs
+    ///   InputSourceCode.Instance.PCM             the open motherboard
+    ///     ._circuitHolders[_dropdown.Selected]   the selected holder
+    ///       .GetLogicableFromIndex(0..5, db)     what completion needs
+    ///
+    /// The holder is kept as an <see cref="ICircuitHolder"/>, never narrowed to a
+    /// CircuitHousing: anything that takes a chip can be selected there, a hardsuit
+    /// included, and narrowing used to throw all of its context away.
     /// </summary>
     internal static class EditorContext
     {
@@ -157,8 +162,8 @@ namespace IZCode.Mod.UI
         //  Selected housing
         // ==================================================================
 
-        /// <summary>The housing selected in the motherboard dropdown, or null.</summary>
-        public static CircuitHousing? GetHousing()
+        /// <summary>The holder selected in the motherboard dropdown, or null.</summary>
+        public static ICircuitHolder? GetHousing()
         {
             try
             {
@@ -175,13 +180,7 @@ namespace IZCode.Mod.UI
                 if (holders.Count == 0) return null;
 
                 int index = SelectedHolderIndex(motherboard, holders.Count);
-                var housing = holders[index] as CircuitHousing;
-
-                if (housing == null)
-                    IZLog.Throttled(IZLogArea.Editor, IZLogLevel.Debug, "holder-not-housing", 5f,
-                        () => "holder " + index + " is not a CircuitHousing");
-
-                return housing;
+                return holders[index];
             }
             catch (Exception ex)
             {
@@ -207,18 +206,31 @@ namespace IZCode.Mod.UI
             return selected;
         }
 
-        public static Assets.Scripts.Objects.Electrical.ProgrammableChip? GetChip(CircuitHousing? housing)
+        /// <summary>
+        /// The chip inside the holder. Only used to read the values of the running
+        /// program's globals, so every failure here just means a plainer tooltip.
+        ///
+        /// A circuit housing publishes its chip as a property; a suit keeps it in a
+        /// slot instead, which is why there are two ways in.
+        /// </summary>
+        public static Assets.Scripts.Objects.Electrical.ProgrammableChip? GetChip(ICircuitHolder? housing)
         {
-            if (housing == null || _housingChip == null) return null;
+            if (housing == null) return null;
             try
             {
-                return _housingChip.GetValue(housing, null)
-                    as Assets.Scripts.Objects.Electrical.ProgrammableChip;
+                if (housing is CircuitHousing && _housingChip != null)
+                    return _housingChip.GetValue(housing, null)
+                        as Assets.Scripts.Objects.Electrical.ProgrammableChip;
+
+                if (housing is SuitBase suit && suit.HasChipSlot)
+                    return suit.ChipSlot?.Get<Assets.Scripts.Objects.Electrical.ProgrammableChip>();
+
+                return null;
             }
             catch (Exception ex)
             {
                 IZLog.Throttled(IZLogArea.Editor, IZLogLevel.Debug, "chip-failed", 5f,
-                    () => "could not read the housing chip: " + ex.Message);
+                    () => "could not read the holder's chip: " + ex.Message);
                 return null;
             }
         }

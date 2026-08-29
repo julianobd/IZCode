@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IZLang.Diagnostics;
 using IZLang.Lexing;
+using IZLang.Vm;
 
 namespace IZLang.Editor
 {
@@ -14,7 +15,10 @@ namespace IZLang.Editor
         public DeclaredKind Kind { get; }
         public SourceSpan NameSpan { get; }
 
-        /// <summary>Pin 0..5. Only meaningful for <see cref="DeclaredKind.Device"/>; -1 otherwise.</summary>
+        /// <summary>
+        /// Pin 0..5, or <see cref="Vm.DevicePins.Housing"/> for 'db'. Only meaningful
+        /// for <see cref="DeclaredKind.Device"/>; -1 otherwise.
+        /// </summary>
         public int Pin { get; }
 
         /// <summary>
@@ -365,16 +369,9 @@ namespace IZLang.Editor
             }
         }
 
-        /// <summary>'d0'..'d5' - the six pins of the circuit housing.</summary>
-        public static bool TryParsePin(string text, out int pin)
-        {
-            pin = -1;
-            if (text.Length != 2 || text[0] != 'd') return false;
-            char digit = text[1];
-            if (digit < '0' || digit > '5') return false;
-            pin = digit - '0';
-            return true;
-        }
+        /// <summary>'d0'..'d5' - the housing pins - and 'db', the device holding the chip.</summary>
+        public static bool TryParsePin(string text, out int pin) =>
+            DevicePins.TryParse(text, out pin);
 
         /// <summary>Looks up the declaration of a name. Devices win over variables of the same name.</summary>
         public static DeclaredSymbol? Find(List<DeclaredSymbol> symbols, string name)

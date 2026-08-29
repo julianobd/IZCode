@@ -24,7 +24,12 @@ namespace IZLang.Vm
         /// <summary>World time in seconds. The basis for 'sleep'.</summary>
         double CurrentTime { get; }
 
-        /// <summary>false when the pin has no device connected, or the LogicType is not readable.</summary>
+        /// <summary>
+        /// false when the pin has no device connected, or the LogicType is not readable.
+        ///
+        /// <paramref name="pin"/> is 0..5 for d0..d5, or
+        /// <see cref="DevicePins.Housing"/> for 'db' - the device holding the chip.
+        /// </summary>
         bool TryReadDevice(int pin, int logicType, out double value);
 
         /// <summary>false when the pin is empty, or the LogicType is not writable.</summary>
@@ -71,11 +76,13 @@ namespace IZLang.Vm
                 Value = value;
             }
 
-            public override string ToString() => "d" + Pin + "." + LogicType + " = " + Value;
+            public override string ToString() =>
+                DevicePins.Name(Pin) + "." + LogicType + " = " + Value;
         }
 
         private static long Key(int a, int b) => ((long)a << 32) | (uint)b;
-        private static long SlotKey(int pin, int slot, int logic) => ((long)pin << 40) | ((long)slot << 20) | (uint)logic;
+        private static long SlotKey(int pin, int slot, int logic) =>
+            ((long)pin << 40) | ((long)(slot & 0xFFFFF) << 20) | (uint)(logic & 0xFFFFF);
 
         public void Connect(int pin) => _connectedPins.Add(pin);
 

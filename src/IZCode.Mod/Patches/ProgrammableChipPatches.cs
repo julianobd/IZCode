@@ -49,7 +49,7 @@ namespace IZCode.Mod.Patches
                 var housing = ChipAccess.GetHousing(__instance);
                 if (housing == null)
                     IZLog.Debug(IZLogArea.Chip,
-                        "IZ chip with no housing (outside a CircuitHousing?); it compiles, but reads no device");
+                        "IZ chip in nothing that holds a chip; it compiles, but reads no device");
 
                 var runtime = IZChipRuntime.GetOrCreate(__instance);
                 runtime.Compile(sourceCode, housing!);

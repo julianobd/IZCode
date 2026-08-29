@@ -562,7 +562,9 @@ namespace IZLang.Editor
 
         private static void AddPins(List<CompletionItem> items, SourceSpan span, IEditorEnvironment environment)
         {
-            for (int pin = 0; pin <= 5; pin++)
+            // 'db' goes last: the six pins are what a program reaches for most of the
+            // time, and the chip's own housing is the special case.
+            for (int pin = DevicePins.First; pin <= DevicePins.Housing; pin++)
             {
                 var device = environment.GetWiredDevice(pin);
                 string? label = environment.GetWiredDeviceLabel(pin);
@@ -570,10 +572,10 @@ namespace IZLang.Editor
                 // Showing what is wired to each pin is the whole point: without it the
                 // player has to leave the editor to check the wiring.
                 string detail = device == null
-                    ? "(empty)"
+                    ? (pin == DevicePins.Housing ? "the device the chip is installed in" : "(empty)")
                     : (label != null ? label + " - " + device.DisplayName : device.DisplayName);
 
-                items.Add(new CompletionItem("d" + pin, CompletionKind.Pin, detail, span, pin));
+                items.Add(new CompletionItem(DevicePins.Name(pin), CompletionKind.Pin, detail, span, pin));
             }
         }
 
@@ -694,7 +696,7 @@ namespace IZLang.Editor
                     case DeclaredKind.Device:
                     {
                         var device = symbol.Pin >= 0 ? environment.GetWiredDevice(symbol.Pin) : null;
-                        string detail = "d" + (symbol.Pin >= 0 ? symbol.Pin.ToString() : "?");
+                        string detail = symbol.Pin >= 0 ? DevicePins.Name(symbol.Pin) : "d?";
                         if (device != null) detail += " - " + device.DisplayName;
                         items.Add(new CompletionItem(symbol.Name, CompletionKind.Device, detail, span, 0));
                         break;

@@ -4,23 +4,25 @@ using Assets.Scripts.Objects.Pipes;
 using IZCode.Mod.Devices;
 using IZLang.Devices;
 using IZLang.Editor;
+using IZLang.Vm;
 
 namespace IZCode.Mod.Runtime
 {
     /// <summary>
-    /// Implements <see cref="IEditorEnvironment"/> over the CircuitHousing currently
-    /// open in the editor.
+    /// Implements <see cref="IEditorEnvironment"/> over the holder whose chip is open
+    /// in the editor.
     ///
     /// It is what lets completion know each pin's equipment and the hover show real
-    /// values: the housing knows exactly what is wired to d0..d5, so there is no
-    /// guesswork.
+    /// values: the holder knows exactly what is on d0..d5 and what 'db' is, so there is
+    /// no guesswork. It asks through <see cref="ICircuitHolder"/> so that a hardsuit,
+    /// where the pins are the wearer's slots, answers just as well as a wall housing.
     /// </summary>
     public sealed class HousingEditorEnvironment : IEditorEnvironment
     {
-        private readonly CircuitHousing? _housing;
+        private readonly ICircuitHolder? _housing;
         private readonly ProgrammableChip? _chip;
 
-        public HousingEditorEnvironment(CircuitHousing? housing, ProgrammableChip? chip)
+        public HousingEditorEnvironment(ICircuitHolder? housing, ProgrammableChip? chip)
         {
             _housing = housing;
             _chip = chip;
@@ -30,10 +32,22 @@ namespace IZCode.Mod.Runtime
 
         private ILogicable? GetLogicable(int pin)
         {
-            if (_housing == null || pin < 0 || pin > 5) return null;
+            if (_housing == null || !DevicePins.IsValid(pin)) return null;
 
-            var devices = _housing.Devices;
-            return devices != null && pin < devices.Length ? devices[pin] : null;
+            try
+            {
+                // int.MaxValue is how the game names the holder itself; int.MinValue as
+                // the network index means "no particular network", which is what makes
+                // it hand back the holder instead of one of its networks.
+                return _housing.GetLogicableFromIndex(
+                    pin == DevicePins.Housing ? int.MaxValue : pin, int.MinValue);
+            }
+            catch
+            {
+                // Completion runs on every keystroke; a holder that throws when asked
+                // (a suit with nobody wearing it) must not take the editor down with it.
+                return null;
+            }
         }
 
         public DeviceInfo? GetWiredDevice(int pin)

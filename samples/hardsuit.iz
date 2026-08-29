@@ -12,12 +12,14 @@
 //   * the AC follows the suit's own temperature setting plus an offset, with
 //     hysteresis so it does not chatter around the target.
 //
-// Wiring note: IZ v0.1 addresses the six housing pins (d0..d5) and has no
-// equivalent of IC10's 'db' (the housing itself), so the suit is referenced
-// through a pin here rather than as self.
+// Wiring: the chip goes into the hardsuit's own chip slot, so 'db' is the suit
+// itself - a suit is not wired to itself and no pin could reach it. On a suit the
+// six pins are the wearer's slots rather than cables, and d0 is the helmet:
+//
+//   d0 helmet   d1 backpack   d2 toolbelt   d3 glasses   d4 left hand   d5 right hand
 
-device suit   = d0;
-device helmet = d1;
+device suit   = db;
+device helmet = d0;
 
 // ---- user customization ------------------------------------------------
 

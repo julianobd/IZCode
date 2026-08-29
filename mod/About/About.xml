@@ -53,7 +53,7 @@ Execution starts at [b]fn main()[/b]. When it returns, the chip stops until rest
 [*][b]num[/b] — 64-bit floating-point number
 [*][b]bool[/b] — Boolean value
 [*][b]str[/b] — Immutable ASCII string
-[*][b]dev[/b] — Device pin d0-d5
+[*][b]dev[/b] — Device pin d0-d5, or db
 [*][b]T[N][/b] — Fixed-size arrays
 [*][b]list[/b] — Typed collections
 [*][b]struct[/b] — User-defined structures
@@ -131,6 +131,13 @@ Presure
 [/code]
 
 [b]Error:[/b] Unknown device property. Did you mean [b]Pressure?[/b]
+
+[b]db[/b] is the device the chip is installed in, and the only way to reach it: nothing can be wired to it. In a circuit housing it is the housing. In a hardsuit, which holds a chip in its own slot, it is the suit, so a program can read its own PressureExternal and drive its own AC. On a suit the six pins are the wearer's slots: d0 helmet, d1 backpack, d2 toolbelt, d3 glasses, d4 and d5 hands.
+
+[code]
+device self = db;
+self.Setting = 1;
+[/code]
 
 [h3]Batch Operations[/h3]
 
