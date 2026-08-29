@@ -47,6 +47,25 @@ namespace IZCode.Mod.Patches
                 IZLog.Debug(IZLogArea.Highlight, "motherboard screen: field 'SourceCode' resolved");
         }
 
+        /// <summary>
+        /// How much of the program the screen shows.
+        ///
+        /// This is uGUI's old <c>Text</c>: one mesh, and a mesh stops at 65000-odd
+        /// vertices, four to a character. An IZ program can now be longer than that, so
+        /// it is cut here - on a screen where the code is a few pixels tall, what is
+        /// past this point was never going to be read anyway.
+        /// </summary>
+        private const int ScreenCharacters = 8000;
+
+        /// <summary>The program as much of it as the screen can draw.</summary>
+        private static string ForTheScreen(string? sourceCode)
+        {
+            if (string.IsNullOrEmpty(sourceCode)) return string.Empty;
+            if (sourceCode!.Length <= ScreenCharacters) return sourceCode;
+
+            return sourceCode.Substring(0, ScreenCharacters) + "\n...";
+        }
+
         [HarmonyPostfix]
         [HarmonyPatch(nameof(ProgrammableChipMotherboard.SetSourceCode), typeof(string))]
         public static void SetSourceCode_Postfix(ProgrammableChipMotherboard __instance, string sourceCode)
@@ -58,7 +77,7 @@ namespace IZCode.Mod.Patches
                 Resolve();
                 if (!(_sourceCodeText?.GetValue(__instance) is Text screen)) return;
 
-                screen.text = SyntaxHighlighter.Highlight(sourceCode ?? string.Empty, null,
+                screen.text = SyntaxHighlighter.Highlight(ForTheScreen(sourceCode), null,
                                                           RichTextFlavor.LegacyText);
                 screen.raycastTarget = false;
 

@@ -2,6 +2,7 @@ using System;
 using System.Text;
 using Assets.Scripts.UI;
 using IZCode.Mod.Diagnostics;
+using IZCode.Mod.Runtime;
 using IZLang.Editor;
 using TMPro;
 using UnityEngine;
@@ -57,15 +58,32 @@ namespace IZCode.Mod.UI
         private const float FallbackFontSize = 14f;
 
         // ==================================================================
-        //  Game limits
+        //  Limits
         // ==================================================================
-        //  The same ones InputSourceCode has: the source ends up stored in the original
-        //  128 fields, so going past them here would only postpone losing text until
-        //  save time.
+        //  The game's editor stops at 128 lines of 90 characters, 4096 bytes in all,
+        //  because that is what its 128 input fields hold. In IZ mode the panel is
+        //  what holds the program and Copy() takes it from here, so none of those
+        //  three apply: what is left is what TextMeshPro can draw.
+        //
+        //  A TMP text builds one mesh, and a mesh stops at 65532 vertices - four per
+        //  glyph, so 16383 glyphs. Past that the end of the program is simply not
+        //  drawn, and the caret goes with it. That, less a margin, is the ceiling; the
+        //  chip, the save file and the network sync all take whatever comes.
 
-        private const int MaxLines = 1280;
-        private const int MaxLineLength = 90;
-        private const int MaxFileSize = 131072;
+        /// <summary>Characters the code area holds, drawn by a single TMP mesh.</summary>
+        public const int MaxFileSize = 16000;
+
+        /// <summary>Lines the code area holds. The gutter is a TMP text too.</summary>
+        public const int MaxLines = 2000;
+
+        /// <summary>Characters per line: past this a line only scrolls sideways.</summary>
+        public const int MaxLineLength = 200;
+
+        /// <summary>
+        /// What one line of the game's own editor holds. Only the invisible copy kept
+        /// in those 128 fields is cut to it; the program itself is not.
+        /// </summary>
+        private const int GameLineLength = 90;
 
         // ==================================================================
         //  State
@@ -215,7 +233,7 @@ namespace IZCode.Mod.UI
 
             _on = true;
             gameObject.SetActive(true);      // TMP_InputField only builds the caret here
-            LoadFromGameLines();
+            LoadSource();
             HideGameLines(true);
 
             _input?.ActivateInputField();
@@ -232,10 +250,16 @@ namespace IZCode.Mod.UI
             int caret = CaretOffset;
             string source = Text;
 
-            FlushToGameLines(force: true);
+            FlushToGameLines();
             gameObject.SetActive(false);
             HideGameLines(false);
             RestoreGameCaret(source, caret);
+
+            // Last, so the copy stored is the lines exactly as they are left. The
+            // program stays known with the panel off: the Confirm button hides the
+            // editor before it copies, and deleting the marker by mistake must not
+            // cost everything past the game's 128th line.
+            Remember(source);
 
             IZLog.Info(IZLogArea.Editor, "IZ code area switched off");
         }
@@ -511,69 +535,109 @@ namespace IZCode.Mod.UI
         }
 
         // ==================================================================
-        //  Bridge to the game's 128 lines
+        //  Bridge to the game's editor
         // ==================================================================
+        //  The game's 128 lines of 90 characters cannot hold an IZ program of any
+        //  size, so they stop being where it lives: the panel is. They are kept as a
+        //  readable copy - the byte count, and the game's own editor if this panel
+        //  ever fails to build - and as the way the game tells us about a paste.
+        //
+        //  What leaves the editor does not come from them either: the Copy() patch
+        //  takes the program from here, whole.
+
+        /// <summary>The whole program, for as long as the editor stays open.</summary>
+        private static string? _sessionSource;
+
+        /// <summary>What the game's lines held the moment the program was stored.</summary>
+        private static string? _sessionCopy;
 
         /// <summary>
-        /// Takes over the text the game just wrote into the 128 lines.
+        /// Forgets the program of the previous editor session.
         ///
-        /// The Paste and Clear buttons, and loading a script from the Library, all end
-        /// up in <c>InputSourceCode.Paste</c>, which writes straight into the lines and
-        /// knows nothing about this panel. Without this the panel would hand its own,
-        /// now stale, text back on the very next frame and the button would look like
-        /// it had done nothing at all.
+        /// Called when the editor opens, before the game pastes the chip's source into
+        /// the lines: what was in there belongs to whichever chip was edited last.
         /// </summary>
-        public static void ReloadFromGameLines()
+        public static void ForgetSession()
         {
-            if (!IsActive) return;
+            _sessionSource = null;
+            _sessionCopy = null;
+        }
 
-            try { Instance!.AdoptGameLines(); }
+        /// <summary>
+        /// The game has just replaced its lines with <paramref name="value"/>, cut to
+        /// 128 lines of 90 characters: the Paste and Clear buttons, a script from the
+        /// Library, and the source of the chip being opened all go through there.
+        ///
+        /// The whole of it is kept here, so what the player pasted is what gets saved,
+        /// and so the panel stops handing its own, now stale, text back on the next
+        /// frame - which is what used to make those buttons look inert.
+        /// </summary>
+        public static void AdoptPaste(string? value)
+        {
+            try
+            {
+                Remember(SourceLimits.Clamp(value, MaxLines, MaxLineLength, MaxFileSize));
+                if (IsActive) Instance!.ShowSessionSource();
+            }
             catch (Exception ex)
             {
-                IZLog.Warn(IZLogArea.Editor, "could not reload the IZ code area: " + ex.Message);
+                IZLog.Warn(IZLogArea.Editor, "could not take over the pasted source: " + ex.Message);
             }
         }
 
         /// <summary>
-        /// Makes sure the game's lines are holding the panel's text right now.
+        /// The program to hand to the game, or null when the game's own lines are the
+        /// truth: IC10, or an IZ program this panel never took over.
         ///
-        /// The usual flush happens in LateUpdate; <c>InputSourceCode.Copy()</c> - behind
-        /// the copy button, the save button and Save As - runs in Update and would
-        /// otherwise be able to read the lines one frame behind.
+        /// It outlives the panel being switched off on purpose. The Confirm button
+        /// hides the editor before it copies, and by then the panel is already off -
+        /// only what was stored here still knows the whole program.
         /// </summary>
-        public static void FlushToGame()
+        public static string? TryGetSource()
         {
-            if (!IsActive) return;
+            try
+            {
+                if (IsActive) Remember(Instance!.Text);
 
-            try { Instance!.FlushToGameLines(force: false); }
+                if (_sessionSource == null) return null;
+
+                // Without the marker it is IC10 again, and IC10's limits are the
+                // game's own: let it copy from its 128 lines as it always has.
+                if (!IZChipRuntime.IsIZSource(_sessionSource)) return null;
+
+                // Anything else wrote to the lines, so they, not us, are the truth.
+                if (!string.Equals(ReadGameLines(out _), _sessionCopy, StringComparison.Ordinal))
+                    return null;
+
+                return _sessionSource;
+            }
             catch (Exception ex)
             {
-                IZLog.Warn(IZLogArea.Editor, "could not hand the IZ text back to the game: " + ex.Message);
+                IZLog.Warn(IZLogArea.Editor,
+                    "could not read the IZ source; the game's lines will answer: " + ex.Message);
+                return null;
             }
         }
 
-        /// <summary>
-        /// The whole buffer was replaced from outside: the caret goes to the start and
-        /// the selection is dropped, since neither means anything in the new text.
-        /// </summary>
-        private void AdoptGameLines()
+        /// <summary>Stores the program, with the copy the game's lines hold right now.</summary>
+        private static void Remember(string source)
         {
-            if (_input == null) return;
-
-            string source = ReadGameLines(out _);
-
-            _input.SetTextWithoutNotify(source);
-            _input.stringPosition = 0;
-            _input.selectionStringAnchorPosition = 0;
-            _input.selectionStringFocusPosition = 0;
-            _dirty = true;
-
-            // Clicking the button took the keyboard away from the field; without this
-            // the player would have to click back on the code to carry on typing.
-            _refocus = true;
+            _sessionSource = source;
+            _sessionCopy = ReadGameLines(out _);
         }
 
-        /// <summary>The game's 128 lines joined into one source, and the lines themselves.</summary>
+        /// <summary>
+        /// Where the panel's text comes from: the whole program when the game's lines
+        /// are still the copy we left in them, the lines themselves when anything else
+        /// has written to them. The rule itself is in <see cref="SessionSource"/>.
+        /// </summary>
+        private static string ResolveSource(out string?[] lineTexts)
+        {
+            string lines = ReadGameLines(out lineTexts);
+            return SessionSource.Resolve(lines, _sessionSource, _sessionCopy);
+        }
+
+        /// <summary>The game's lines joined into one source, and the lines themselves.</summary>
         private static string ReadGameLines(out string?[] texts)
         {
             texts = new string?[0];
@@ -589,13 +653,39 @@ namespace IZCode.Mod.UI
             return LineOffsets.Join(buffer);
         }
 
-        private void LoadFromGameLines()
+        /// <summary>
+        /// Shows the program stored for this session, after it was replaced from
+        /// outside: the caret goes to the start and the selection is dropped, since
+        /// neither means anything in the new text.
+        /// </summary>
+        private void ShowSessionSource()
+        {
+            if (_input == null) return;
+
+            string source = ResolveSource(out _);
+
+            _input.SetTextWithoutNotify(source);
+            _input.stringPosition = 0;
+            _input.selectionStringAnchorPosition = 0;
+            _input.selectionStringFocusPosition = 0;
+            _dirty = true;
+
+            // Clicking the button took the keyboard away from the field; without this
+            // the player would have to click back on the code to carry on typing.
+            _refocus = true;
+        }
+
+        /// <summary>
+        /// Fills the panel when it switches on, keeping the caret where the game's
+        /// editor had it.
+        /// </summary>
+        private void LoadSource()
         {
             var editor = InputSourceCode.Instance;
             if (_input == null || editor == null || editor.LinesOfCode == null) return;
 
             var lines = editor.LinesOfCode;
-            string source = ReadGameLines(out var texts);
+            string source = ResolveSource(out var texts);
 
             // The caret comes from where it was in the game editor: whoever just typed
             // '#iz' keeps the caret at the end of '#iz', not thrown to the start.
@@ -621,19 +711,22 @@ namespace IZCode.Mod.UI
         /// <summary>
         /// Hands the panel's text back to the game's 128 lines.
         ///
+        /// This is no longer where the program is kept - <see cref="TryGetSource"/> is
+        /// - but it is what the byte count reads, what the game's own editor shows if
+        /// the marker goes away, and what is still there if this panel ever fails.
+        ///
         /// It only writes to the lines that changed: writing to all 128 rebuilds 128
         /// text meshes, and doing that on every keystroke would be felt.
         /// <c>SetTextWithoutNotify</c> because the game's highlighter does not need to
         /// run on an invisible line.
         /// </summary>
-        private void FlushToGameLines(bool force)
+        private void FlushToGameLines()
         {
             var editor = InputSourceCode.Instance;
             if (editor == null || editor.LinesOfCode == null) return;
 
             string[] source = Text.Split('\n');
             var lines = editor.LinesOfCode;
-            bool changed = false;
 
             for (int i = 0; i < lines.Count; i++)
             {
@@ -641,27 +734,28 @@ namespace IZCode.Mod.UI
                 if (line == null || line.InputField == null) continue;
 
                 string wanted = i < source.Length ? source[i] : string.Empty;
-                if (wanted.Length > MaxLineLength) wanted = wanted.Substring(0, MaxLineLength);
+                if (wanted.Length > GameLineLength) wanted = wanted.Substring(0, GameLineLength);
 
                 if (string.Equals(line.InputField.text, wanted, StringComparison.Ordinal)) continue;
 
                 line.InputField.SetTextWithoutNotify(wanted);
-                changed = true;
             }
 
+            // Not a loss: what gets saved is the panel's text, whole, through the
+            // Copy() patch. The lines are only the copy the game itself can read.
             if (source.Length > lines.Count)
-                IZLog.Throttled(IZLogArea.Editor, IZLogLevel.Warn, "too-many-lines", 10f,
-                    () => "the source has " + source.Length + " lines and the chip stores " +
-                          lines.Count + "; the surplus will not be saved");
+                IZLog.Throttled(IZLogArea.Editor, IZLogLevel.Debug, "too-many-lines", 10f,
+                    () => "the source has " + source.Length + " lines and the game's editor holds " +
+                          lines.Count + "; the copy kept in them stops there");
 
-            if (changed || force)
+            // Every time, not only when a line moved: past the game's 128th line the
+            // program grows without any of them changing, and the byte count would sit
+            // still while the program grew.
+            try { editor.UpdateFileSize(); }
+            catch (Exception ex)
             {
-                try { editor.UpdateFileSize(); }
-                catch (Exception ex)
-                {
-                    IZLog.Throttled(IZLogArea.Editor, IZLogLevel.Warn, "file-size", 10f,
-                        () => "could not update the byte count: " + ex.Message);
-                }
+                IZLog.Throttled(IZLogArea.Editor, IZLogLevel.Warn, "file-size", 10f,
+                    () => "could not update the byte count: " + ex.Message);
             }
         }
 
@@ -747,6 +841,10 @@ namespace IZCode.Mod.UI
                 if (added == '\v') return '\0';        // Shift+Enter, which TMP invents
                 if (added == '\r') return '\0';        // Windows line ending: the '\n' is enough
 
+                // The chip stores ASCII. A letter with an accent would be dropped on
+                // the way there anyway, so it never gets in.
+                if (added != '\n' && added != '\t' && (added < ' ' || added > '~')) return '\0';
+
                 if (added == '\t')
                     return Input.GetKey(KeyCode.Tab) ? '\0' : ' ';
 
@@ -797,7 +895,7 @@ namespace IZCode.Mod.UI
             {
                 _dirty = false;
                 Repaint();
-                FlushToGameLines(force: false);
+                FlushToGameLines();
             }
 
             // The gutter cannot be a child of the text: the text also moves

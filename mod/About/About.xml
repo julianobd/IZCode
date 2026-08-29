@@ -4,7 +4,7 @@
   <Author>julianobd</Author>
   <Version>0.1.3</Version>
   <ModID>izcode</ModID>
-  <Description>[h1]IZCode — Structured Programming for Stationeers[/h1]
+  <Description>[h1]IZCode - Structured Programming for Stationeers[/h1]
 
 IZCode replaces IC10 with IZ: a structured programming language with types, real functions and recursion, running on its own virtual machine inside the Programmable Chip.
 
@@ -14,7 +14,7 @@ Write [b]#iz[/b] on the first line of a chip and IZCode takes over. Chips withou
 
 [table]
 [tr][th]IC10[/th][th]IZ[/th][/tr]
-[tr][td]128 lines[/td][td]Limited only by source size[/td][/tr]
+[tr][td]128 lines, 4096 bytes[/td][td]2000 lines, 16000 bytes[/td][/tr]
 [tr][td]16 registers[/td][td]Named variables managed by the compiler[/td][/tr]
 [tr][td]jal/ra, limited calls[/td][td]Functions, parameters, returns and recursion[/td][/tr]
 [tr][td]Restarts every tick[/td][td]Freezes and resumes execution[/td][/tr]
@@ -285,12 +285,22 @@ Every client and the server need the mod installed, and VM behavior in multiplay
 
 [hr]
 
-[i]IZCode — Structured programming for Stationeers.[/i]
+[i]IZCode - Structured programming for Stationeers.[/i]
 </Description>
   <ChangeLog>
 ===== 0.1.4 =========================================================
-Fixed Copy/Paste/Clear buttons.
 
+BIGGER PROGRAMS. The editor's 128 lines of 90 characters, 4096 bytes in all, are
+the size of the game's own input fields. In IZ mode the code area is what holds
+the program and what gets saved comes from there, so the ceiling is now 2000
+lines of 200 characters, 16000 bytes - as much as TextMeshPro can draw. Deleting
+the '#iz' marker no longer costs what is past the 128th line: type it again and
+the program comes back whole.
+
+COPY, PASTE AND CLEAR. The three buttons wrote straight into the 128 lines, and
+the code area put its own text back over them on the next frame, so they looked
+inert. They work now, and carry the whole program: pasting a 400 line script
+keeps its 400 lines.
 
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>

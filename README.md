@@ -25,7 +25,7 @@ fn main() {
 
 | | IC10 | IZ |
 |---|---|---|
-| Code limit | 128 lines | bounded only by the source size |
+| Code limit | 128 lines of 90 characters, 4096 bytes | 2000 lines of 200 characters, 16000 bytes |
 | Registers | 16, managed by hand | named variables, allocated by the compiler |
 | Functions | `jal`/`ra`, one practical level | `fn` with parameters, return values and recursion |
 | State between ticks | restarts from the top every tick | **the VM freezes and resumes where it stopped** |
@@ -384,14 +384,24 @@ Along with it comes VS Code's automatic indentation:
 | `}` on a blank line | goes back one level, to line up with the opening brace |
 | `Tab` / `Shift+Tab` | shifts the whole selected block |
 
-The original 128 lines do not go away: they become invisible and get the text
-back on every change, so `Copy()`, the save button, the byte count and the chip
-keep working as before. The traffic runs both ways: **Copy**, **Paste**, **Clear**
-and loading a script from the **Library** write into those same lines, and the
-code area picks the new text up at once instead of writing its own back over it.
-Deleting the `#iz` gives the game's editor back, whole, with the caret on the
-same line. And if building the panel fails for any reason,
-the original editor never leaves the stage.
+**A program bigger than the editor.** The game's editor is 128 lines of 90
+characters, 4096 bytes in all, because that is what its 128 input fields hold. In
+IZ mode the code area is what holds the program, and what leaves the editor comes
+from there, so those three numbers stop applying: **2000 lines of 200 characters,
+16000 bytes**. The ceiling is TextMeshPro's - one mesh draws at most 16383 glyphs,
+and past that the end of the program would not be drawn at all. The chip, the
+save file and the multiplayer sync take whatever comes.
+
+The 128 lines do not go away: they become invisible and get the text back on
+every change, so the byte count, the game's own editor and the chip keep working,
+and if building the code area ever fails the original editor is still there,
+whole. The traffic runs both ways: **Copy**, **Paste**, **Clear** and loading a
+script from the **Library** all write into those lines, and the code area takes
+the whole of what arrived - not only the part the 128 lines could hold.
+
+Deleting the `#iz` gives the game's editor back, with the caret on the same line.
+What is past its 128th line is not lost by that: type the marker again and the
+program comes back whole.
 
 **Completion that knows your wiring.** The editor is opened by the Programmable
 Chip Motherboard, which knows which holder is selected, and the holder knows
