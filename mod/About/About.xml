@@ -4,183 +4,277 @@
   <Author>julianobd</Author>
   <Version>0.1.1</Version>
   <ModID>izcode</ModID>
-  <Description>IZCode replaces IC10 with IZ: a structured programming language with types, real functions and recursion, running on its own virtual machine inside the Programmable Chip.
+  <Description>[h1]IZCode — Structured Programming for Stationeers[/h1]
 
-Write '#iz' on the first line of a chip and the mod takes over. Chips without the marker keep working as plain IC10, so nothing you already built changes.
+IZCode replaces IC10 with IZ: a structured programming language with types, real functions and recursion, running on its own virtual machine inside the Programmable Chip.
 
-===== WHY IT EXISTS =================================================
+Write [b]#iz[/b] on the first line of a chip and IZCode takes over. Chips without the marker continue working as normal IC10, so existing builds are unaffected.
 
-    IC10 |                              IZ
-    ---- |                              --
-    128 lines |                         bounded only by the source size
-    16 registers, managed by hand |     named variables, given by the compiler
-    jal/ra, one practical level |       fn with parameters, returns, recursion
-    restarts every tick |               freezes and resumes where it stopped
-    an infinite loop hangs the chip |   preempted by budget, the game carries on
-    typos found at runtime |            compile errors, with a name suggestion
-    everything is a double |            num, bool, str, dev checked at compile time
-    HASH("x"), the text is gone |       a real str: joined, compared, hashed live
-    16 loose registers |                struct and arrays, in a real heap
-    count it yourself |                 a list type, with LINQ style queries
+[h2]WHY IT EXISTS[/h2]
 
-===== A COMPLETE PROGRAM ============================================
+[table]
+[tr][th]IC10[/th][th]IZ[/th][/tr]
+[tr][td]128 lines[/td][td]Limited only by source size[/td][/tr]
+[tr][td]16 registers[/td][td]Named variables managed by the compiler[/td][/tr]
+[tr][td]jal/ra, limited calls[/td][td]Functions, parameters, returns and recursion[/td][/tr]
+[tr][td]Restarts every tick[/td][td]Freezes and resumes execution[/td][/tr]
+[tr][td]Infinite loop hangs the chip[/td][td]VM preempts execution automatically[/td][/tr]
+[tr][td]Typos found at runtime[/td][td]Compile errors with suggestions[/td][/tr]
+[tr][td]Everything is a double[/td][td]num, bool, str and dev are type-checked[/td][/tr]
+[tr][td]HASH("text")[/td][td]Real strings with concatenation and comparison[/td][/tr]
+[tr][td]Loose registers[/td][td]Arrays, structs and lists[/td][/tr]
+[/table]
 
-    #iz
-    device sensor = d0;
-    device inlet  = d1;
+[h2]A COMPLETE PROGRAM[/h2]
 
-    const TARGET = 101.325;
+[code]
+#iz
+device sensor = d0;
+device inlet = d1;
 
-    fn main() {
-        loop {
-            var p = sensor.Pressure;
-            inlet.On = p &lt; TARGET - 5.0;
-            yield;
-        }
-    }
+const TARGET = 101.325;
 
-Execution starts at fn main(); when it returns, the chip stops until restarted.
+fn main() {
+  loop {
+    var p = sensor.Pressure;
+    inlet.On = p < TARGET - 5.0;
+    yield;
+  }
+}
+[/code]
 
-===== THE LANGUAGE ==================================================
+Execution starts at [b]fn main()[/b]. When it returns, the chip stops until restarted.
 
-TYPES. num (64-bit float, the one numeric type), bool, str (immutable ASCII),
-dev (pin d0-d5), T[N] arrays, lists and your own structs. num and bool are NOT
-interchangeable: 'if x' needs a bool, write 'if x != 0'; the other way round is
-fine, so 'pump.On = p &lt; 100' works as written.
+[h2]THE LANGUAGE[/h2]
 
-    var   counter = 0;           // inferred num, mutable
-    var   active: bool = false;  // explicit annotation
-    const MAX = 101.325;         // folded at compile time, free at runtime
+[h3]Types[/h3]
 
-Anything declared outside a function is global and keeps its value across ticks.
+[list]
+[*][b]num[/b] — 64-bit floating-point number
+[*][b]bool[/b] — Boolean value
+[*][b]str[/b] — Immutable ASCII string
+[*][b]dev[/b] — Device pin d0-d5
+[*][b]T[N][/b] — Fixed-size arrays
+[*][b]list[/b] — Typed collections
+[*][b]struct[/b] — User-defined structures
+[/list]
 
-ARRAYS AND STRUCTS live in the VM heap, laid out entirely at compile time: no
-allocator to call, nothing to collect.
+num and bool are not interchangeable. [code]if x[/code] requires a bool; write [code]if x != 0[/code] for numeric conditions.
 
-    var samples: num[8];         // eight cells, zeroed
-    struct Gauge { total: num; cursor: num; samples: num[8]; }
+[code]
+var counter = 0;
+var active: bool = false;
+const MAX = 101.325;
+[/code]
 
-The length is part of the type and len(a) folds into a constant. Aggregates
-travel by reference, so a function fills one in instead of handing it back, and
-their cells belong to the call that declared them: recursion gets its own and
-nothing leaks. An index outside the array stops the chip.
+Globals keep their values across ticks.
 
-LISTS AND QUERIES. A list is an array plus how much of it is in use, and it
-answers what you would otherwise write a loop for:
+[h3]Arrays and Structs[/h3]
 
-    var rooms: list Room[8];        // room for eight, holding none
-    var r: Room;   r.temp = 40;
-    rooms.add(r);                   // add, remove, removeAt, clear, count
+Arrays and structs live in the VM heap and are laid out at compile time. There is no runtime allocator or garbage collector.
 
-    var mean  = rooms.avg(x =&gt; x.temp);          // one number
-    var hot   = rooms.where(x =&gt; x.temp &gt; 30);   // a list of its own
-    var worst = rooms.orderByDesc(x =&gt; x.temp).first();
+[code]
+var samples: num[8];
 
-    where select take skip takeWhile skipWhile orderBy orderByDesc reverse
-    distinct sum avg min max count any all first last firstOr lastOr
-    contains indexOf into
+struct Gauge {
+  total: num;
+  cursor: num;
+  samples: num[8];
+}
+[/code]
 
-A chain becomes ONE loop over the cells, lambdas inlined: no list between one
-method and the next, and no call per element. Sorting and distinct reserve
-cells of their own, sized at compile time.
+Array length is part of the type, and [code]len(a)[/code] is resolved at compile time. Aggregates are passed by reference. Recursive calls get their own local storage.
 
-DEVICES are properties, checked against the game's LogicType table as you type:
+[h3]Lists and Queries[/h3]
 
-    var p = sensor.Pressure;     // error if the property does not exist
-    pump.On = true;              // error if it is read-only
+Lists are fixed-size arrays with a count, providing LINQ-style queries:
 
-    'Presure' is not a known device property; did you mean 'Pressure'?
+[code]
+var rooms: list Room[8];
 
-BATCH OPERATIONS reach every device on the data network, no cable to each:
+var r: Room;
+r.temp = 40;
+rooms.add(r);
 
-    all(StructureWallLight).On = true;              // by prefab
-    named("Corridor Light").On = false;             // by label
-    named(StructureVolumePump, "north").On = true;  // both
-    var avg = all(StructureGasSensor).Pressure;     // averages; 0 if none
+var mean  = rooms.avg(x => x.temp);
+var hot   = rooms.where(x => x.temp > 30);
+var worst = rooms.orderByDesc(x => x.temp).first();
+[/code]
 
-A bare prefab name, a #"hash" literal and a const holding one are the same
-compile-time constant, at zero runtime cost.
+[b]Queries:[/b]
 
-TEXT is a value like any other: variable, parameter, return, array cell or
-struct field, and built while the program runs.
+[list]
+[*]where, select, take, skip
+[*]takeWhile, skipWhile
+[*]orderBy, orderByDesc, reverse
+[*]distinct, sum, avg, min, max
+[*]count, any, all
+[*]first, last, firstOr, lastOr
+[*]contains, indexOf, into
+[/list]
 
-    var label = "vent-" + side;        // == and != compare the text
-    all("Structure" + kind).On = true; // hashed as it runs, the same CRC32
-    len  hash  char  chr  sub  find  text  fixed  parse
+Query chains become a single loop. Lambdas are inlined, avoiding intermediate lists and per-element calls.
 
-A num only becomes text through text(x), never silently inside a '+'.
+[h3]Devices[/h3]
 
-CONTROL FLOW: if / else if / else, while, loop, for i in 0..10 (or 0..=10),
-break, continue. No goto and no labels, and braces are mandatory.
+Device properties are checked against the game's LogicType table:
 
-FUNCTIONS take typed parameters, return a value, may call one declared further
-down the file, and recurse - bounded by a call depth limit that raises a clean
-runtime error.
+[code]
+var p = sensor.Pressure;
+pump.On = true;
+[/code]
 
-    fn gcd(a: num, b: num) -&gt; num {
-        if b == 0 { return a; }
-        return gcd(b, a % b);
-    }
+Invalid properties produce compile-time errors with suggestions:
 
-OPERATORS follow C precedence, with -x !x ~x as prefixes. '%' takes the sign of
-the divisor, as in IC10; division by zero follows IEEE-754. Assignment is a
-statement, so 'if (a = b)' does not compile. Math and trigonometry built-ins are
-all there, plus len, hash, rand, nan and inf.
+[code]
+Presure
+[/code]
 
-TICK CONTROL: 'yield' hands the tick back and resumes at the next instruction,
-'sleep(2)' suspends. Write neither and the VM preempts itself.
+[b]Error:[/b] Unknown device property. Did you mean [b]Pressure?[/b]
 
-===== THE EDITOR, UPGRADED ==========================================
+[h3]Batch Operations[/h3]
 
-A REAL CODE AREA. The Stationeers editor is 128 independent text fields, one per
-line. In IZ mode it becomes one field with a gutter and a current-line
-highlight: drag selection, Shift+arrows, Ctrl+A/C/X/V and the wheel work
-natively, and indentation follows VS Code.
+Operate on every matching device on the data network:
 
-COMPLETION THAT KNOWS YOUR WIRING. The editor knows what is wired to each pin,
-so typing 'pump.' suggests the properties of THAT pump, with the live value
-alongside, instead of all 358 in the game:
+[code]
+all(StructureWallLight).On = true;
+named("Corridor Light").On = false;
+named(StructureVolumePump, "north").On = true;
 
-    pump.
-          On          rw
-          Setting     rw  = 45
-          Pressure    r   = 101.325
+var avg = all(StructureGasSensor).Pressure;
+[/code]
 
-It also completes pins, prefab names, slot properties, the query methods of a
-list, and your own declarations.
+Prefab names, [code]#"hash"[/code] literals and constants are compile-time values with zero runtime cost.
 
-ERRORS WHILE YOU TYPE. The same compiler the chip runs on CONFIRM compiles the
-screen a fraction of a second after the last keystroke: red underline for
-errors, amber for warnings, and a panel saying what is wrong. Runtime errors
-light the housing's error LED, like an IC10 exception.
+[h3]Text[/h3]
 
-HOVER WITH REAL VALUES. Point at a device variable for the equipment, its label,
-its hash and every readable property. Plus syntax highlighting built for IZ.
+Strings are real runtime values and can be stored in variables, parameters, returns, arrays and structs.
 
-===== REQUIREMENTS ==================================================
+[code]
+var label = "vent-" + side;
+all("Structure" + kind).On = true;
+[/code]
 
-IZCode is a C# plugin, and Stationeers does not load C# on its own: install
-BepInEx and StationeersLaunchPad first, then enable IZCode in the mods menu.
-[IZCode] in Player.log confirms it loaded.
+[b]Functions:[/b] [b]len[/b], [b]hash[/b], [b]char[/b], [b]chr[/b], [b]sub[/b], [b]find[/b], [b]text[/b], [b]fixed[/b], [b]parse[/b].
 
-===== SAFE TO TRY ===================================================
+Numbers become text only through [code]text(x)[/code].
 
-Since '#iz' reads as a comment to the IC10 parser, a chip carrying IZ code does
-not break the game for someone without the mod installed.
+[h3]Control Flow[/h3]
 
-Example programs ship in the samples/ folder, from pressure control and solar
-tracking to list queries and a full hardsuit controller.
+[list]
+[*]if / else if / else
+[*]while / loop
+[*]for
+[*]break / continue
+[/list]
 
-===== MULTIPLAYER ===================================================
+Ranges support [code]0..10[/code] and [code]0..=10[/code]. There is no goto or labels. Braces are mandatory.
 
-Only tested in single player. Multiplayer has NOT been tested: every client and
-the server need the mod installed, and how the VM behaves there is unknown. Use
-it at your own risk, and report what you find on the tracker below.
+[h3]Functions and Recursion[/h3]
 
-===== LINKS =========================================================
+Functions have typed parameters, return values and recursion.
 
-Source code:  https://github.com/julianobd/IZCode
-Bug reports:  https://github.com/julianobd/IZCode/issues</Description>
+[code]
+fn gcd(a: num, b: num) -> num {
+  if b == 0 {
+    return a;
+  }
+  return gcd(b, a % b);
+}
+[/code]
+
+Recursion is protected by a call-depth limit with a clean runtime error.
+
+[h3]Operators and Math[/h3]
+
+Operators follow C precedence. Prefix operators include [b]-x[/b], [b]!x[/b] and [b]~x[/b].
+
+Division by zero follows IEEE-754. Assignment is a statement, so [code]if (a = b)[/code] does not compile.
+
+Math and trigonometry functions are available, along with [b]len[/b], [b]hash[/b], [b]rand[/b], [b]nan[/b] and [b]inf[/b].
+
+[h3]Tick Control[/h3]
+
+[code]yield[/code] gives the tick back and resumes at the next instruction.
+
+[code]sleep(2)[/code] suspends execution.
+
+Without either, the VM automatically preempts execution when the budget is reached.
+
+[h2]THE EDITOR, UPGRADED[/h2]
+
+[h3]Real Code Area[/h3]
+
+The standard Stationeers editor uses 128 independent text fields. IZ mode turns it into one proper editor with a gutter and current-line highlight.
+
+[list]
+[*]Drag selection
+[*]Shift + Arrow
+[*]Ctrl + A / C / X / V
+[*]Mouse wheel
+[*]VS Code-style indentation
+[/list]
+
+[h3]Wiring-Aware Completion[/h3]
+
+The editor knows which device is connected to each pin. Typing [code]pump.[/code] suggests the properties of that specific device, including live values.
+
+It also completes pins, prefab names, slot properties, list queries and your own declarations.
+
+[h3]Live Errors[/h3]
+
+The same compiler used by the chip analyzes the editor shortly after you stop typing.
+
+[list]
+[*]Red underline — errors
+[*]Amber underline — warnings
+[*]Diagnostic panel with details
+[/list]
+
+Runtime errors light the housing's error LED, like an IC10 exception.
+
+[h3]Hover Information[/h3]
+
+Hover over a device variable to see its equipment, label, hash and readable properties.
+
+[h2]REQUIREMENTS[/h2]
+
+IZCode is a C# plugin. Stationeers requires a mod loader to run it.
+
+[list]
+[*]BepInEx
+[*]StationeersLaunchPad
+[*]IZCode
+[/list]
+
+Enable IZCode in the mods menu. [code][IZCode][/code] in [code]Player.log[/code] confirms that it loaded.
+
+[h2]SAFE TO TRY[/h2]
+
+Because [code]#iz[/code] is a valid comment to the IC10 parser, a chip containing IZ code does not break for players who do not have IZCode installed.
+
+Example programs are included in [code]samples/[/code], covering pressure control, solar tracking, list queries and a full hardsuit controller.
+
+[h2]MULTIPLAYER[/h2]
+
+[b]Multiplayer has NOT been tested.[/b]
+
+Only single player has been tested. Every client and the server need the mod installed. VM behavior in multiplayer is currently unknown.
+
+Use it at your own risk and report your findings on the issue tracker.
+
+[h2]LINKS[/h2]
+
+[b]Source code:[/b]
+[url=https://github.com/julianobd/IZCode]GitHub Repository[/url]
+
+[b]Bug reports:[/b]
+[url=https://github.com/julianobd/IZCode/issues]Issue Tracker[/url]
+
+[hr]
+
+[i]IZCode — Structured programming for Stationeers.[/i]
+</Description>
   <ChangeLog>
 ===== 0.1.1 =========================================================
 
