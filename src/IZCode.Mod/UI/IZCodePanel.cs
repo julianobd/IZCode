@@ -63,9 +63,9 @@ namespace IZCode.Mod.UI
         //  128 fields, so going past them here would only postpone losing text until
         //  save time.
 
-        private const int MaxLines = 128;
+        private const int MaxLines = 1280;
         private const int MaxLineLength = 90;
-        private const int MaxFileSize = 4096;
+        private const int MaxFileSize = 131072;
 
         // ==================================================================
         //  State
