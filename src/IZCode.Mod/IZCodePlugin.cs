@@ -76,6 +76,15 @@ namespace IZCode.Mod
         private static bool _initialized;
 
         /// <summary>
+        /// Marks the domain, not this assembly, as having brought IZCode up.
+        ///
+        /// A static field would not do: when the same mod is installed twice, the game
+        /// loads IZCode.dll twice, and each copy gets statics of its own. The domain is
+        /// the one thing both copies share.
+        /// </summary>
+        private const string DomainKey = "izcode.initialized";
+
+        /// <summary>
         /// Brings the mod up. <paramref name="entryPoint"/> goes to the log because both
         /// paths exist, and knowing which one the game came in through already explains
         /// half the loading problems.
@@ -84,6 +93,8 @@ namespace IZCode.Mod
         {
             if (_initialized) return;
             _initialized = true;
+
+            if (RefuseSecondCopy()) return;
 
             // The first line always comes out, log configuration or not: if it does not
             // show up in Player.log, the mod was not loaded - and in that case the
@@ -128,6 +139,44 @@ namespace IZCode.Mod
                 IZLog.Exception(IZLogArea.Load, "failed to load", ex);
                 IZLog.Banner("INCOMPLETE LOAD: see the error above. The mod is loaded but may be inert.");
             }
+        }
+
+        /// <summary>
+        /// Stops a second copy of the mod from loading on top of the first.
+        ///
+        /// It happens the moment IZCode is installed both from the Workshop and by
+        /// hand in the mods folder: the game loads IZCode.dll twice, and the two
+        /// copies are two different assemblies with the same class names. The
+        /// symptoms are ugly and hard to read - the loader's own entry point fails
+        /// with "Object does not match target type", because it finds the method on
+        /// one copy and Unity resolves the component to the other - and if it got
+        /// past that, every Harmony patch would be applied twice.
+        ///
+        /// So the first copy in wins and the second says exactly what to do about it.
+        /// </summary>
+        private static bool RefuseSecondCopy()
+        {
+            var domain = AppDomain.CurrentDomain;
+            if (domain.GetData(DomainKey) == null)
+            {
+                domain.SetData(DomainKey, Assembly.GetExecutingAssembly().Location ?? "?");
+                return false;
+            }
+
+            IZLog.Banner("======================================================");
+            IZLog.Banner(ModName + " is installed twice, and only the first copy is running.");
+            IZLog.Banner("  already loaded: " + (domain.GetData(DomainKey) as string ?? "?"));
+            IZLog.Banner("  this copy:      " + Where(Assembly.GetExecutingAssembly()));
+            IZLog.Banner("Disable one of them in the mods menu, or delete its folder. Two");
+            IZLog.Banner("copies would patch the game twice and program the chip twice over.");
+            IZLog.Banner("======================================================");
+            return true;
+        }
+
+        private static string Where(Assembly assembly)
+        {
+            try { return assembly.Location; }
+            catch { return "?"; }
         }
 
         /// <summary>
