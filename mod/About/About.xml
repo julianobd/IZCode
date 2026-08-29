@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>IZCode</Name>
   <Author>julianobd</Author>
-  <Version>0.1.1</Version>
+  <Version>0.1.2</Version>
   <ModID>izcode</ModID>
   <Description>[h1]IZCode — Structured Programming for Stationeers[/h1]
 
