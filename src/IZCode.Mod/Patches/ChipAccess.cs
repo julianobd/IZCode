@@ -115,6 +115,19 @@ namespace IZCode.Mod.Patches
         }
 
         /// <summary>
+        /// Puts out a runtime error that has been left behind.
+        ///
+        /// The counterpart of <see cref="SetRuntimeError"/>: a device error clears by
+        /// itself as soon as the device is back, and the LED has to follow. IC10 does
+        /// the same after every instruction that does not throw.
+        /// </summary>
+        public static void ClearRuntimeError(ProgrammableChip chip)
+        {
+            SetNumericField(_errorLineNumberSynced, chip, 0);
+            SetNumericField(_errorTypeSynced, chip, 0);
+        }
+
+        /// <summary>
         /// Writes a number into any field, respecting its actual type.
         ///
         /// This is fiddlier than it looks because the game mixes them: the error line

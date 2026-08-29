@@ -52,7 +52,7 @@ namespace IZCode.Mod.Patches
                         "IZ chip in nothing that holds a chip; it compiles, but reads no device");
 
                 var runtime = IZChipRuntime.GetOrCreate(__instance);
-                runtime.Compile(sourceCode, housing!);
+                runtime.Compile(sourceCode, __instance);
 
                 // The IC10 parser has just rejected the IZ source. Without clearing
                 // that, the housing would never call Execute.
@@ -96,17 +96,30 @@ namespace IZCode.Mod.Patches
 
             try
             {
+                bool wasFailing = runtime.HasError;
                 var state = runtime.Tick(IZCodePlugin.OpsPerTick);
 
                 if (state == ExecutionResult.Error)
                 {
                     ChipAccess.SetRuntimeError(__instance, runtime.EditorErrorLine);
                     ChipAccess.GetHousing(__instance)?.RaiseError(1);
-                    IZLog.Warn(IZLogArea.Vm,
-                        "IZ runtime error (line " + runtime.ErrorLine + "): " + runtime.ErrorMessage);
+                    // A device error retries every tick until the device is back, so
+                    // the warning is throttled: otherwise one unplugged cable fills
+                    // the log.
+                    IZLog.Throttled(IZLogArea.Vm, IZLogLevel.Warn, "runtime-error", 10f,
+                        () => "IZ runtime error (line " + runtime.ErrorLine + "): " + runtime.ErrorMessage);
                 }
                 else
                 {
+                    if (wasFailing)
+                    {
+                        // The missing device came back and the program restarted on its
+                        // own; the LED the failed tick lit has to go out with it.
+                        ChipAccess.ClearRuntimeError(__instance);
+                        ChipAccess.GetHousing(__instance)?.ClearError();
+                        IZLog.Info(IZLogArea.Vm, "IZ recovered from the device error and restarted");
+                    }
+
                     // One tick per chip every 0.5s: without throttling, this alone would
                     // fill the log of any base with half a dozen chips.
                     IZLog.Throttled(IZLogArea.Vm, IZLogLevel.Trace, "tick", 5f,

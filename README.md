@@ -99,6 +99,15 @@ slots rather than cables:
 completion knows them, and hover shows their live values. See
 `samples/self-device.iz` and `samples/hardsuit.iz`.
 
+The pins follow the chip. Take a chip out of a circuit housing, put it in a
+suit, and `db` becomes the suit without the code being touched or recompiled.
+While the program cannot reach a device - the suit is not being worn, the cable
+is not plugged in yet, the property does not exist on whatever is holding the
+chip - it stops with a device error and the housing lights its error LED, then
+restarts on the next tick and keeps trying. The moment the device is there it
+picks up again on its own and the LED goes out. Every other runtime error is a
+bug in the program: it stops for good, with the error line pointing at it.
+
 ## Lists
 
 The chip has no allocator, and the heap is laid out at compile time. A `list` is

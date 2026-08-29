@@ -36,6 +36,18 @@ namespace IZCode.Mod.Runtime
         public bool HasError => ErrorLine > 0;
 
         /// <summary>
+        /// Whether the current error is one the world can fix on its own.
+        ///
+        /// A device error says nothing about the program: the chip may have just been
+        /// moved into another holder, the suit may not be worn yet, the equipment may
+        /// not be wired. Those come back, and when they do the program has to come back
+        /// with them, so it restarts on the next tick - the same way IC10 keeps retrying
+        /// its failing line. Every other error is a bug in the code and stays latched,
+        /// with the error line pointing at it.
+        /// </summary>
+        private bool _recoverable;
+
+        /// <summary>
         /// The same line in the game editor's numbering, which is zero-based - the
         /// compiler counts from 1. Without this conversion the error LED always points
         /// one line below the one with the problem.
@@ -43,7 +55,7 @@ namespace IZCode.Mod.Runtime
         public int EditorErrorLine => ErrorLine > 0 ? ErrorLine - 1 : 0;
 
         /// <summary>true when there is a valid program ready to run.</summary>
-        public bool IsRunnable => Vm != null && !HasError;
+        public bool IsRunnable => Vm != null && (!HasError || _recoverable);
 
         // ------------------------------------------------------------------
         //  Detection and table
@@ -86,11 +98,12 @@ namespace IZCode.Mod.Runtime
         /// Compiles the source and prepares a fresh VM. It always drops the previous
         /// state: editing the code restarts the program, which is what the player expects.
         /// </summary>
-        public void Compile(string source, ICircuitHolder housing)
+        public void Compile(string source, ProgrammableChip chip)
         {
             Vm = null;
             ErrorLine = 0;
             ErrorMessage = null;
+            _recoverable = false;
 
             Compilation = IZCompiler.Compile(StripMarker(source));
 
@@ -101,7 +114,7 @@ namespace IZCode.Mod.Runtime
                 return;
             }
 
-            Vm = new IZVm(Compilation.Program!, new HousingDeviceHost(housing));
+            Vm = new IZVm(Compilation.Program!, new HousingDeviceHost(chip));
         }
 
         /// <summary>
@@ -145,7 +158,15 @@ namespace IZCode.Mod.Runtime
         /// <summary>Runs one tick. Returns the state, or null when there is nothing to run.</summary>
         public ExecutionResult? Tick(int budget)
         {
-            if (Vm == null || HasError) return null;
+            if (Vm == null) return null;
+
+            if (HasError)
+            {
+                // A latched error is the end of the road; a recoverable one gets the
+                // program started over, in case the missing device is back.
+                if (!_recoverable) return null;
+                Restart();
+            }
 
             var state = Vm.Run(budget);
 
@@ -153,6 +174,7 @@ namespace IZCode.Mod.Runtime
             {
                 ErrorLine = Vm.Error.Line;
                 ErrorMessage = Vm.Error.Message;
+                _recoverable = Vm.Error.Kind == RuntimeErrorKind.DeviceNotConnected;
             }
             return state;
         }
@@ -167,6 +189,7 @@ namespace IZCode.Mod.Runtime
             {
                 ErrorLine = 0;
                 ErrorMessage = null;
+                _recoverable = false;
             }
         }
 
@@ -176,6 +199,7 @@ namespace IZCode.Mod.Runtime
             Compilation = null;
             ErrorLine = 0;
             ErrorMessage = null;
+            _recoverable = false;
         }
     }
 }

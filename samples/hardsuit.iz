@@ -17,6 +17,12 @@
 // six pins are the wearer's slots rather than cables, and d0 is the helmet:
 //
 //   d0 helmet   d1 backpack   d2 toolbelt   d3 glasses   d4 left hand   d5 right hand
+//
+// So this one does not run in a circuit housing: a housing has no AirRelease and
+// no Filtration, and the first line that writes one stops the program. It needs
+// the suit worn (the pins are the wearer's slots), a charged battery in the suit
+// and a helmet on the head. Until all three are true the chip sits on a device
+// error and retries; it starts working by itself once they are.
 
 device suit   = db;
 device helmet = d0;

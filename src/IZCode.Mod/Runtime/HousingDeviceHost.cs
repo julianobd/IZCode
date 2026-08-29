@@ -3,6 +3,7 @@ using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Motherboards;
 using Assets.Scripts.Objects.Pipes;
 using IZCode.Mod.Diagnostics;
+using IZCode.Mod.Patches;
 using IZLang.Vm;
 using UnityEngine;
 
@@ -21,12 +22,24 @@ namespace IZCode.Mod.Runtime
     /// </summary>
     public sealed class HousingDeviceHost : IDeviceHost
     {
-        private readonly ICircuitHolder _housing;
+        private readonly ProgrammableChip _chip;
 
-        public HousingDeviceHost(ICircuitHolder housing)
+        public HousingDeviceHost(ProgrammableChip chip)
         {
-            _housing = housing;
+            _chip = chip;
         }
+
+        /// <summary>
+        /// The holder the chip is sitting in right now, looked up on every access and
+        /// never cached.
+        ///
+        /// A chip is a portable item: it gets programmed in a circuit housing and then
+        /// carried to a hardsuit, and the holder changes without the source code being
+        /// touched. IC10 reads its housing fresh on every instruction for the same
+        /// reason. A holder captured when the program was compiled would leave the
+        /// program talking to the bench it was written on.
+        /// </summary>
+        private ICircuitHolder? Housing => ChipAccess.GetHousing(_chip);
 
         public double CurrentTime => Time.time;
 
@@ -44,7 +57,7 @@ namespace IZCode.Mod.Runtime
                 // The network index is passed explicitly: the holder only hands back
                 // itself for 'db' when no particular network was asked for, and relying
                 // on an interface method's default argument is not worth the risk.
-                return _housing?.GetLogicableFromIndex(GameIndex(pin), int.MinValue);
+                return Housing?.GetLogicableFromIndex(GameIndex(pin), int.MinValue);
             }
             catch
             {
@@ -108,7 +121,7 @@ namespace IZCode.Mod.Runtime
         //  Batch operations
         // ------------------------------------------------------------------
 
-        private List<ILogicable>? GetBatch() => _housing?.GetBatchOutput();
+        private List<ILogicable>? GetBatch() => Housing?.GetBatchOutput();
 
         public bool TryBatchRead(double prefabHash, int logicType, BatchAggregation aggregation, out double value) =>
             Aggregate(GetBatch(), (int)prefabHash, nameHash: null, (LogicType)logicType, aggregation, out value);
