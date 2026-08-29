@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>IZCode</Name>
   <Author>julianobd</Author>
-  <Version>0.1.0</Version>
+  <Version>0.1.1</Version>
   <ModID>izcode</ModID>
   <Description>IZCode replaces IC10 with IZ: a structured programming language with types, real functions and recursion, running on its own virtual machine inside the Programmable Chip.
 
