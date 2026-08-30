@@ -59,7 +59,7 @@ Execution starts at [b]fn main()[/b]. When it returns, the chip stops until rest
 [*][b]struct[/b] — User-defined structures
 [/list]
 
-num and bool are not interchangeable. [code]if x[/code] requires a bool; write [code]if x != 0[/code] for numeric conditions.
+num and bool are not interchangeable. [b]if x[/b] requires a bool; write [b]if x != 0[/b] for numeric conditions.
 
 [code]
 var counter = 0;
@@ -83,7 +83,7 @@ struct Gauge {
 }
 [/code]
 
-Array length is part of the type; [code]len(a)[/code] is compile-time. Aggregates pass by reference.
+Array length is part of the type; [b]len(a)[/b] is compile-time. Aggregates pass by reference.
 
 [h3]Lists and Queries[/h3]
 
@@ -124,7 +124,7 @@ var p = sensor.Pressure;
 pump.On = true;
 [/code]
 
-Invalid properties are compile errors: [code]Presure[/code] answers [i]did you mean Pressure?[/i]
+Invalid properties are compile errors: [b]Presure[/b] answers [i]did you mean Pressure?[/i]
 
 [b]db[/b] is the device the chip is installed in, and the only way to reach it: nothing can be wired to it. In a circuit housing it is the housing; in a hardsuit it is the suit, so a program can read its own PressureExternal and drive its AC. On a suit the six pins are the wearer's slots: d0 helmet, d1 backpack, d2 toolbelt, d3 glasses, d4 and d5 hands.
 
@@ -163,7 +163,7 @@ device led = named(StructureDiode, #"led-dev");
 led.On = true;
 [/code]
 
-Prefab names, [code]#"hash"[/code] literals and constants are compile-time values with zero runtime cost.
+Prefab names, [b]#"hash"[/b] literals and constants are compile-time values with zero runtime cost.
 
 [h3]Text[/h3]
 
@@ -176,7 +176,7 @@ all("Structure" + kind).On = true;
 
 [b]Functions:[/b] [b]len[/b], [b]hash[/b], [b]char[/b], [b]chr[/b], [b]sub[/b], [b]find[/b], [b]text[/b], [b]fixed[/b], [b]parse[/b].
 
-Numbers become text only through [code]text(x)[/code].
+Numbers become text only through [b]text(x)[/b].
 
 [h3]Control Flow[/h3]
 
@@ -187,7 +187,7 @@ Numbers become text only through [code]text(x)[/code].
 [*]break / continue
 [/list]
 
-Ranges support [code]0..10[/code] and [code]0..=10[/code]. There is no goto or labels. Braces are mandatory.
+Ranges support [b]0..10[/b] and [b]0..=10[/b]. There is no goto or labels. Braces are mandatory.
 
 [h3]Functions and Recursion[/h3]
 
@@ -208,15 +208,15 @@ A call-depth limit turns runaway recursion into a clean error.
 
 Operators follow C precedence. Prefix operators include [b]-x[/b], [b]!x[/b] and [b]~x[/b].
 
-Division by zero follows IEEE-754. Assignment is a statement, so [code]if (a = b)[/code] does not compile.
+Division by zero follows IEEE-754. Assignment is a statement, so [b]if (a = b)[/b] does not compile.
 
 Math and trigonometry functions are available, along with [b]len[/b], [b]hash[/b], [b]rand[/b], [b]nan[/b] and [b]inf[/b].
 
 [h3]Tick Control[/h3]
 
-[code]yield[/code] gives the tick back and resumes at the next instruction.
+[b]yield[/b] gives the tick back and resumes at the next instruction.
 
-[code]sleep(2)[/code] suspends execution.
+[b]sleep(2)[/b] suspends execution.
 
 Without either, the VM preempts when the budget runs out.
 
@@ -236,7 +236,7 @@ The standard Stationeers editor uses 128 independent text fields. IZ mode turns 
 
 [h3]Wiring-Aware Completion[/h3]
 
-The editor knows what is on each pin, and which equipment a selector reaches: [code]pump.[/code] and [code]leds.[/code] suggest that device's properties, with live values.
+The editor knows what is on each pin, and which equipment a selector reaches: [b]pump.[/b] and [b]leds.[/b] suggest that device's properties, with live values.
 
 It also completes pins, prefab names, slot properties, game constants, list queries and your own declarations.
 
@@ -262,17 +262,16 @@ IZCode is a C# plugin. Stationeers requires a mod loader to run it.
 
 [list]
 [*]BepInEx
-[*]StationeersLaunchPad
-[*]IZCode
+[*][url=https://github.com/StationeersLaunchPad/StationeersLaunchPad]StationeersLaunchPad[/url]
 [/list]
 
-Enable IZCode in the mods menu. [code][IZCode][/code] in [code]Player.log[/code] confirms it loaded.
+Enable IZCode in the mods menu. [b][IZCode][/b] in [b]Player.log[/b] confirms it loaded.
 
 [h2]SAFE TO TRY[/h2]
 
-[code]#iz[/code] is a valid IC10 comment, so a chip with IZ code does not break for players without IZCode.
+[b]#iz[/b] is a valid IC10 comment, so a chip with IZ code does not break for players without IZCode.
 
-Example programs are in [code]samples/[/code]: pressure control, solar tracking, list queries and a hardsuit controller.
+Example programs are in [b]samples/[/b]: pressure control, solar tracking, list queries and a hardsuit controller.
 
 [h2]MULTIPLAYER[/h2]
 
