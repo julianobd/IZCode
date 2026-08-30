@@ -28,6 +28,12 @@ namespace IZLang.Editor
         public string? BatchSelector { get; }
 
         /// <summary>
+        /// The same selector taken apart into prefab and label, which is what lets the
+        /// editor find the equipment behind it. Empty for a device on a pin.
+        /// </summary>
+        public DeviceSelector Selector { get; }
+
+        /// <summary>
         /// Base name of the declared type, with no brackets: 'num[3][2]' gives "num"
         /// and an <see cref="ArrayDepth"/> of 2. null when the declaration has no
         /// annotation. This is what lets completion tell a struct from a device.
@@ -49,7 +55,7 @@ namespace IZLang.Editor
         public DeclaredSymbol(string name, DeclaredKind kind, SourceSpan nameSpan, int pin = -1,
                               string? typeName = null, int arrayDepth = 0,
                               SourceSpan typeSpan = default, bool isList = false,
-                              string? batchSelector = null)
+                              string? batchSelector = null, DeviceSelector selector = default)
         {
             Name = name;
             Kind = kind;
@@ -60,6 +66,7 @@ namespace IZLang.Editor
             TypeSpan = typeSpan;
             IsList = isList;
             BatchSelector = batchSelector;
+            Selector = selector;
         }
 
         public override string ToString() => Kind + " " + Name;
@@ -131,7 +138,8 @@ namespace IZLang.Editor
                         if (i + 1 < tokens.Count && tokens[i + 1].Kind == TokenKind.Identifier)
                         {
                             int pin = -1;
-                            string? selector = null;
+                            string? selectorText = null;
+                            var selector = default(DeviceSelector);
 
                             // Neither the pin nor the selector may have been typed yet.
                             if (i + 3 < tokens.Count && tokens[i + 2].Kind == TokenKind.Equals)
@@ -140,12 +148,15 @@ namespace IZLang.Editor
                                     TryParsePin(tokens[i + 3].Text, out pin);
                                 else if (tokens[i + 3].Kind == TokenKind.KwAll ||
                                          tokens[i + 3].Kind == TokenKind.KwNamed)
-                                    selector = ReadSelectorText(tokens, i + 3);
+                                {
+                                    selectorText = ReadSelectorText(tokens, i + 3);
+                                    selector = ParseSelector(tokens, i + 3);
+                                }
                             }
 
                             symbols.Add(new DeclaredSymbol(
                                 tokens[i + 1].Text, DeclaredKind.Device, tokens[i + 1].Span, pin,
-                                batchSelector: selector));
+                                batchSelector: selectorText, selector: selector));
                         }
                         break;
 
@@ -417,6 +428,85 @@ namespace IZLang.Editor
 
             return text.ToString();
         }
+
+        /// <summary>
+        /// Takes 'all(...)' / 'named(...)' apart into the prefab and the label.
+        ///
+        /// Only literals count: a selector built from a const or a variable cannot be
+        /// followed here, and the editor learns nothing about that device - exactly as
+        /// it did before. The arguments are read as they were written, so a half typed
+        /// 'named(StructureDiode' still gives back the prefab.
+        /// </summary>
+        public static DeviceSelector ParseSelector(IReadOnlyList<Token> tokens, int keywordIndex)
+        {
+            if (keywordIndex < 0 || keywordIndex >= tokens.Count) return default;
+
+            var keyword = tokens[keywordIndex].Kind;
+            if (keyword != TokenKind.KwAll && keyword != TokenKind.KwNamed) return default;
+            if (keywordIndex + 1 >= tokens.Count ||
+                tokens[keywordIndex + 1].Kind != TokenKind.LParen) return default;
+
+            // The first token of each top level argument. Anything more elaborate than
+            // a literal stays null, and the caller falls back to the full property list.
+            bool hasFirst = false, hasSecond = false;
+            Token first = default, second = default;
+            int depth = 0;
+            bool atArgumentStart = true;
+
+            for (int i = keywordIndex + 1; i < tokens.Count; i++)
+            {
+                var token = tokens[i];
+                if (token.Kind == TokenKind.Semicolon || token.Kind == TokenKind.EndOfFile) break;
+
+                if (token.Kind == TokenKind.LParen)
+                {
+                    depth++;
+                    atArgumentStart = depth == 1;
+                    continue;
+                }
+                if (token.Kind == TokenKind.RParen)
+                {
+                    if (--depth == 0) break;
+                    continue;
+                }
+                if (token.Kind == TokenKind.Comma && depth == 1)
+                {
+                    atArgumentStart = true;
+                    continue;
+                }
+
+                if (!atArgumentStart) continue;
+                atArgumentStart = false;
+
+                if (!hasFirst) { first = token; hasFirst = true; }
+                else { second = token; hasSecond = true; break; }
+            }
+
+            if (keyword == TokenKind.KwAll)
+                return new DeviceSelector(hasFirst ? PrefabOf(first) : null, null);
+
+            // named("label")  or  named(Prefab, "label")
+            if (!hasFirst) return default;
+            if (!hasSecond) return new DeviceSelector(null, LabelOf(first));
+            return new DeviceSelector(PrefabOf(first), LabelOf(second));
+        }
+
+        /// <summary>A prefab argument: a bare name, or the #"..." form.</summary>
+        private static string? PrefabOf(Token token)
+        {
+            if (token.Kind == TokenKind.Identifier) return token.Text;
+            if (token.Kind == TokenKind.HashLiteral) return token.StringValue;
+            return null;
+        }
+
+        /// <summary>
+        /// A label argument. The #"..." form is as common as the plain string here:
+        /// what the compiler hashes is the text either way.
+        /// </summary>
+        private static string? LabelOf(Token token) =>
+            token.Kind == TokenKind.String || token.Kind == TokenKind.HashLiteral
+                ? token.StringValue
+                : null;
 
         /// <summary>'d0'..'d5' - the housing pins - and 'db', the device holding the chip.</summary>
         public static bool TryParsePin(string text, out int pin) =>

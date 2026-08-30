@@ -200,7 +200,7 @@ namespace IZLang.Editor
 
             var items = new List<CompletionItem>();
             var context = Classify(source, tokens, prefixSpan.Start, declarations, structs,
-                                   out int pin, out string? prefabName, out var structType,
+                                   out int pin, out var selector, out var structType,
                                    out bool wholeList, out string? constantGroup);
 
             // Blank line, nobody asked for anything: dumping the whole vocabulary over
@@ -221,11 +221,11 @@ namespace IZLang.Editor
                     break;
 
                 case CompletionContext.DeviceProperty:
-                    AddDeviceProperties(items, prefixSpan, environment, pin);
+                    AddDeviceProperties(items, prefixSpan, environment, pin, selector);
                     break;
 
                 case CompletionContext.SlotProperty:
-                    AddSlotProperties(items, prefixSpan, environment, pin);
+                    AddSlotProperties(items, prefixSpan, environment, pin, selector);
                     break;
 
                 case CompletionContext.StructField:
@@ -261,13 +261,13 @@ namespace IZLang.Editor
         private static CompletionContext Classify(string source, List<Token> tokens, int prefixStart,
                                                   List<DeclaredSymbol> declarations,
                                                   List<DeclaredStruct> structs,
-                                                  out int pin, out string? prefabName,
+                                                  out int pin, out DeviceSelector selector,
                                                   out DeclaredStruct? structType,
                                                   out bool wholeList,
                                                   out string? constantGroup)
         {
             pin = -1;
-            prefabName = null;
+            selector = default;
             structType = null;
             wholeList = false;
             constantGroup = null;
@@ -298,14 +298,14 @@ namespace IZLang.Editor
                 // x.slot[i].  ->  the token before the '.' is ']'
                 if (index >= 1 && tokens[index - 1].Kind == TokenKind.RBracket)
                 {
-                    pin = FindPinForSlotChain(tokens, index - 1, declarations);
+                    FindDeviceForSlotChain(tokens, index - 1, declarations, out pin, out selector);
                     return CompletionContext.SlotProperty;
                 }
 
                 // all(X).  /  named(...).  -> the prefab's properties, when we know which
                 if (index >= 1 && tokens[index - 1].Kind == TokenKind.RParen)
                 {
-                    prefabName = FindPrefabForSelector(tokens, index - 1);
+                    selector = FindSelector(tokens, index - 1);
                     return CompletionContext.DeviceProperty;
                 }
 
@@ -323,7 +323,14 @@ namespace IZLang.Editor
                         return CompletionContext.ConstantValue;
                     }
 
-                    if (symbol != null && symbol.Kind == DeclaredKind.Device) pin = symbol.Pin;
+                    if (symbol != null && symbol.Kind == DeclaredKind.Device)
+                    {
+                        // A device on a cable is known by its pin; one declared from a
+                        // selector is known by what the selector matches. Either way the
+                        // suggestions come from that one piece of equipment.
+                        pin = symbol.Pin;
+                        selector = symbol.Selector;
+                    }
                     return CompletionContext.DeviceProperty;
                 }
 
@@ -349,11 +356,16 @@ namespace IZLang.Editor
 
         /// <summary>
         /// Walks back from ']' to the device that opens the <c>name.slot[...]</c>
-        /// chain, and returns its pin.
+        /// chain, and hands back how that device was declared: its pin, or the
+        /// selector it was bound to.
         /// </summary>
-        private static int FindPinForSlotChain(List<Token> tokens, int closeBracketIndex,
-                                               List<DeclaredSymbol> declarations)
+        private static void FindDeviceForSlotChain(List<Token> tokens, int closeBracketIndex,
+                                                   List<DeclaredSymbol> declarations,
+                                                   out int pin, out DeviceSelector selector)
         {
+            pin = -1;
+            selector = default;
+
             int depth = 0;
             for (int i = closeBracketIndex; i >= 0; i--)
             {
@@ -370,12 +382,15 @@ namespace IZLang.Editor
                         tokens[i - 3].Kind == TokenKind.Identifier)
                     {
                         var symbol = DeclarationScanner.Find(declarations, tokens[i - 3].Text);
-                        return symbol != null && symbol.Kind == DeclaredKind.Device ? symbol.Pin : -1;
+                        if (symbol != null && symbol.Kind == DeclaredKind.Device)
+                        {
+                            pin = symbol.Pin;
+                            selector = symbol.Selector;
+                        }
                     }
-                    return -1;
+                    return;
                 }
             }
-            return -1;
         }
 
         /// <summary>
@@ -516,8 +531,11 @@ namespace IZLang.Editor
             return limit + 1;
         }
 
-        /// <summary>Prefab name inside all(...) / named(...), when written literally.</summary>
-        private static string? FindPrefabForSelector(List<Token> tokens, int closeParenIndex)
+        /// <summary>
+        /// The selector an inline <c>all(...)</c> / <c>named(...)</c> writes out, found
+        /// by walking back from its closing parenthesis to the keyword that opens it.
+        /// </summary>
+        private static DeviceSelector FindSelector(List<Token> tokens, int closeParenIndex)
         {
             int depth = 0;
             for (int i = closeParenIndex; i >= 0; i--)
@@ -528,15 +546,10 @@ namespace IZLang.Editor
                     depth--;
                     if (depth != 0) continue;
 
-                    if (i + 1 >= tokens.Count) return null;
-
-                    var first = tokens[i + 1];
-                    if (first.Kind == TokenKind.Identifier) return first.Text;
-                    if (first.Kind == TokenKind.HashLiteral) return first.StringValue;
-                    return null;
+                    return i >= 1 ? DeclarationScanner.ParseSelector(tokens, i - 1) : default;
                 }
             }
-            return null;
+            return default;
         }
 
         private static bool IsInsideHashString(string source, int position)
@@ -606,9 +619,13 @@ namespace IZLang.Editor
         }
 
         private static void AddDeviceProperties(List<CompletionItem> items, SourceSpan span,
-                                                IEditorEnvironment environment, int pin)
+                                                IEditorEnvironment environment, int pin,
+                                                DeviceSelector selector)
         {
-            var device = pin >= 0 ? environment.GetWiredDevice(pin) : null;
+            // A batch device has no pin, but the selector still points at one kind of
+            // equipment whenever the prefab is written out or the whole network answers
+            // with a single one. Then it deserves the same list a wired device gets.
+            var device = ResolveDevice(environment, pin, selector);
 
             if (device != null)
             {
@@ -616,7 +633,7 @@ namespace IZLang.Editor
                 foreach (var property in device.Properties)
                 {
                     double? value = property.Access.CanRead()
-                        ? environment.GetLiveValue(pin, property.LogicType)
+                        ? ReadValue(environment, pin, selector, property.LogicType)
                         : null;
 
                     string detail = property.Access.Label();
@@ -642,9 +659,10 @@ namespace IZLang.Editor
         }
 
         private static void AddSlotProperties(List<CompletionItem> items, SourceSpan span,
-                                              IEditorEnvironment environment, int pin)
+                                              IEditorEnvironment environment, int pin,
+                                              DeviceSelector selector)
         {
-            var device = pin >= 0 ? environment.GetWiredDevice(pin) : null;
+            var device = ResolveDevice(environment, pin, selector);
 
             if (device != null && device.SlotProperties.Count > 0)
             {
@@ -658,6 +676,25 @@ namespace IZLang.Editor
                 if (pair.Value == 0) continue;
                 items.Add(new CompletionItem(pair.Key, CompletionKind.SlotProperty, string.Empty, span));
             }
+        }
+
+        /// <summary>
+        /// The equipment behind a device declaration, whichever way it was declared:
+        /// the pin's device, or the one a selector resolves to.
+        /// </summary>
+        internal static DeviceInfo? ResolveDevice(IEditorEnvironment environment, int pin,
+                                                  DeviceSelector selector)
+        {
+            if (pin >= 0) return environment.GetWiredDevice(pin);
+            return selector.IsEmpty ? null : environment.ResolveSelector(selector);
+        }
+
+        /// <summary>Current reading of a property, from the pin or from the selector.</summary>
+        internal static double? ReadValue(IEditorEnvironment environment, int pin,
+                                          DeviceSelector selector, int logicType)
+        {
+            if (pin >= 0) return environment.GetLiveValue(pin, logicType);
+            return selector.IsEmpty ? null : environment.GetSelectorValue(selector, logicType);
         }
 
         private static void AddPrefabs(List<CompletionItem> items, SourceSpan span,
@@ -735,7 +772,7 @@ namespace IZLang.Editor
                 {
                     case DeclaredKind.Device:
                     {
-                        var device = symbol.Pin >= 0 ? environment.GetWiredDevice(symbol.Pin) : null;
+                        var device = ResolveDevice(environment, symbol.Pin, symbol.Selector);
                         string detail = symbol.BatchSelector
                             ?? (symbol.Pin >= 0 ? DevicePins.Name(symbol.Pin) : "d?");
                         if (device != null) detail += " - " + device.DisplayName;

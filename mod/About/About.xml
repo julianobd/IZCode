@@ -236,7 +236,7 @@ The standard Stationeers editor uses 128 independent text fields. IZ mode turns 
 
 [h3]Wiring-Aware Completion[/h3]
 
-The editor knows what is on each pin: [code]pump.[/code] suggests that device's properties, with live values.
+The editor knows what is on each pin, and which equipment a selector reaches: [code]pump.[/code] and [code]leds.[/code] suggest that device's properties, with live values.
 
 It also completes pins, prefab names, slot properties, game constants, list queries and your own declarations.
 
@@ -266,13 +266,13 @@ IZCode is a C# plugin. Stationeers requires a mod loader to run it.
 [*]IZCode
 [/list]
 
-Enable IZCode in the mods menu. [code][IZCode][/code] in [code]Player.log[/code] confirms that it loaded.
+Enable IZCode in the mods menu. [code][IZCode][/code] in [code]Player.log[/code] confirms it loaded.
 
 [h2]SAFE TO TRY[/h2]
 
 [code]#iz[/code] is a valid IC10 comment, so a chip with IZ code does not break for players without IZCode.
 
-Example programs are included in [code]samples/[/code], covering pressure control, solar tracking, list queries and a full hardsuit controller.
+Example programs are in [code]samples/[/code]: pressure control, solar tracking, list queries and a hardsuit controller.
 
 [h2]MULTIPLAYER[/h2]
 
@@ -296,6 +296,14 @@ Every client and the server need the mod installed. Report your findings on the 
 ===== 0.1.5 =========================================================
 
 - Added default game constants.
+- A device bound to a selector now completes like one on a pin. With the prefab
+  written out - 'device led = named(StructureDiode, "led-dev")' - 'led.' offers
+  that diode's properties, with the network's current reading beside each one,
+  instead of all 358 logic types. With only a label - 'named("led-dev")' - the
+  data network is asked, and the properties come from the equipment carrying
+  that label whenever it is all the same prefab. Hover on such a device names
+  the equipment and lists its readings, and 'all(...)' / 'named(...)' written
+  inline behave the same way.
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>

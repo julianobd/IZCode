@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using Assets.Scripts.Objects.Electrical;
 using Assets.Scripts.Objects.Motherboards;
 using Assets.Scripts.Objects.Pipes;
 using IZCode.Mod.Devices;
+using IZLang.Binding;
 using IZLang.Devices;
 using IZLang.Editor;
 using IZLang.Vm;
@@ -98,6 +100,96 @@ namespace IZCode.Mod.Runtime
 
             var vm = runtime.Vm;
             return vm != null ? vm.GetGlobal(slot) : (double?)null;
+        }
+
+        // ------------------------------------------------------------------
+        //  Batch selectors
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// The devices the holder can reach over its data networks - the same list the
+        /// VM's batch operations walk, so what the editor shows is what the program
+        /// will actually talk to.
+        /// </summary>
+        private List<ILogicable>? GetBatch()
+        {
+            try { return _housing?.GetBatchOutput(); }
+            catch { return null; }
+        }
+
+        public DeviceInfo? ResolveSelector(DeviceSelector selector)
+        {
+            if (selector.PrefabName == null && selector.Label == null) return null;
+
+            // The prefab is written out: the catalog knows its properties, whether or
+            // not anything is powered on right now.
+            if (selector.PrefabName != null) return Catalog.FindByName(selector.PrefabName);
+
+            // Only a label: ask the network which equipment answers to it. Two prefabs
+            // sharing one label have no single property list, so nothing is offered.
+            var devices = GetBatch();
+            if (devices == null) return null;
+
+            int labelHash = PrefabHash.Compute(selector.Label!);
+            int found = 0;
+            bool any = false;
+
+            for (int i = 0; i < devices.Count; i++)
+            {
+                var device = devices[i];
+                if (device == null) continue;
+
+                try
+                {
+                    if (device.GetNameHash() != labelHash) continue;
+
+                    int hash = device.GetPrefabHash();
+                    if (!any) { found = hash; any = true; continue; }
+                    if (hash != found) return null;
+                }
+                catch { return null; }
+            }
+
+            return any ? Catalog.FindByHash(found) : null;
+        }
+
+        public double? GetSelectorValue(DeviceSelector selector, int logicType)
+        {
+            if (selector.PrefabName == null && selector.Label == null) return null;
+
+            var devices = GetBatch();
+            if (devices == null) return null;
+
+            int prefabHash = selector.PrefabName != null ? PrefabHash.Compute(selector.PrefabName) : 0;
+            int labelHash = selector.Label != null ? PrefabHash.Compute(selector.Label) : 0;
+            var type = (LogicType)logicType;
+
+            double sum = 0.0;
+            int count = 0;
+
+            for (int i = 0; i < devices.Count; i++)
+            {
+                var device = devices[i];
+                if (device == null) continue;
+
+                try
+                {
+                    if (prefabHash != 0 && device.GetPrefabHash() != prefabHash) continue;
+                    if (selector.Label != null && device.GetNameHash() != labelHash) continue;
+                    if (!device.CanLogicRead(type)) continue;
+
+                    sum += device.GetLogicValue(type);
+                    count++;
+                }
+                catch
+                {
+                    // Completion runs on every keystroke: one device that throws when
+                    // read is skipped, it does not take the whole list down.
+                }
+            }
+
+            // The average, which is what a batch read gives by default.
+            return count > 0 ? sum / count : (double?)null;
         }
     }
 }

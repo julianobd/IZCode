@@ -177,6 +177,17 @@ namespace IZLang.Editor
             {
                 lines.Add("every device matching this selector, on the same data network");
                 lines.Add("a read averages them; a write reaches all of them");
+
+                // When the selector lands on a single kind of equipment, the tooltip can
+                // say which one it is and what it reads right now, exactly as a pin does.
+                var matched = CompletionEngine.ResolveDevice(environment, -1, symbol.Selector);
+                if (matched != null)
+                {
+                    lines.Add(matched.DisplayName);
+                    lines.Add(matched.PrefabName + "  (" + matched.PrefabHash + ")");
+                    AppendLiveValues(lines, matched, -1, symbol.Selector, environment);
+                }
+
                 return new HoverInfo(HoverKind.Device, symbol.Name + " = " + symbol.BatchSelector,
                                      lines, span);
             }
@@ -207,12 +218,12 @@ namespace IZLang.Editor
                 : device.DisplayName);
             lines.Add(device.PrefabName + "  (" + device.PrefabHash + ")");
 
-            AppendLiveValues(lines, device, symbol.Pin, environment);
+            AppendLiveValues(lines, device, symbol.Pin, default, environment);
             return new HoverInfo(HoverKind.Device, title, lines, span);
         }
 
         private static void AppendLiveValues(List<string> lines, DeviceInfo device, int pin,
-                                             IEditorEnvironment environment)
+                                             DeviceSelector selector, IEditorEnvironment environment)
         {
             var readable = new List<string>();
             int hidden = 0;
@@ -221,7 +232,7 @@ namespace IZLang.Editor
             {
                 if (!property.Access.CanRead()) continue;
 
-                double? value = environment.GetLiveValue(pin, property.LogicType);
+                double? value = CompletionEngine.ReadValue(environment, pin, selector, property.LogicType);
                 if (!value.HasValue) continue;
 
                 if (readable.Count >= MaxPropertiesShown) { hidden++; continue; }
@@ -314,29 +325,31 @@ namespace IZLang.Editor
             // When the left side is a declared device, we can say whether THIS
             // equipment accepts the property, and what it is worth right now.
             int pin = -1;
+            var selector = default(DeviceSelector);
             if (index >= 2 && tokens[index - 2].Kind == TokenKind.Identifier)
             {
                 var symbol = DeclarationScanner.Find(declarations, tokens[index - 2].Text);
-                if (symbol != null && symbol.Kind == DeclaredKind.Device) pin = symbol.Pin;
+                if (symbol != null && symbol.Kind == DeclaredKind.Device)
+                {
+                    pin = symbol.Pin;
+                    selector = symbol.Selector;
+                }
             }
 
-            if (pin >= 0)
+            var device = CompletionEngine.ResolveDevice(environment, pin, selector);
+            if (device != null)
             {
-                var device = environment.GetWiredDevice(pin);
-                if (device != null)
+                var property = device.FindProperty(name);
+                if (property == null)
                 {
-                    var property = device.FindProperty(name);
-                    if (property == null)
-                    {
-                        lines.Add(device.DisplayName + " does NOT accept this property");
-                    }
-                    else
-                    {
-                        lines.Add(device.DisplayName + " - " + AccessText(property.Access));
+                    lines.Add(device.DisplayName + " does NOT accept this property");
+                }
+                else
+                {
+                    lines.Add(device.DisplayName + " - " + AccessText(property.Access));
 
-                        double? value = environment.GetLiveValue(pin, logicType);
-                        if (value.HasValue) lines.Add("current value: " + CompletionEngine.FormatValue(value.Value));
-                    }
+                    double? value = CompletionEngine.ReadValue(environment, pin, selector, logicType);
+                    if (value.HasValue) lines.Add("current value: " + CompletionEngine.FormatValue(value.Value));
                 }
             }
 

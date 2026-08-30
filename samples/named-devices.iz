@@ -12,6 +12,12 @@
 //
 // A selector saves pins, not cabling: it reaches the devices on the same data
 // network as the housing, exactly as a pin does.
+//
+// The editor follows a selector like it follows a pin: typing
+// 'greenhouse_sensor.' below suggests the gas sensor's properties, with what
+// the network reads right now beside each one, and hovering the name shows the
+// equipment. Where no prefab is written, as in 'night_shutters', the devices
+// carrying the label are asked instead.
 
 // Two ways to write the prefab: the bare name, or a hash literal.
 device greenhouse_lights = named(StructureWallLight, #"greenhouse");

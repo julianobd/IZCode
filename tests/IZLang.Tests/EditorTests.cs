@@ -274,6 +274,159 @@ namespace IZLang.Tests
             Assert.Contains("StructureVolumePump", Labels(result));
         }
 
+        // ==================================================================
+        //  Completion - devices declared from a selector
+        // ==================================================================
+
+        [Fact]
+        public void ADeviceBoundToASelectorSuggestsThatPrefabsProperties()
+        {
+            var result = Complete(
+                "device pumps = named(StructureVolumePump, \"north\");\n" +
+                "fn main() { pumps.| }\n", Environment());
+
+            Assert.Equal(CompletionContext.DeviceProperty, result.Context);
+
+            var labels = Labels(result);
+            Assert.Equal(new[] { "On", "Pressure", "Setting" }, labels);
+            Assert.DoesNotContain("Temperature", labels);       // that is the sensor's
+        }
+
+        [Fact]
+        public void ADeviceBoundToAllSuggestsThatPrefabsProperties()
+        {
+            var result = Complete(
+                "device sensors = all(StructureGasSensor);\n" +
+                "fn main() { sensors.| }\n", Environment());
+
+            Assert.Equal(new[] { "Pressure", "Temperature" }, Labels(result));
+        }
+
+        [Fact]
+        public void ASelectorWrittenInlineSuggestsThatPrefabsProperties()
+        {
+            var result = Complete("fn main() { all(StructureGasSensor).| }", Environment());
+
+            Assert.Equal(CompletionContext.DeviceProperty, result.Context);
+            Assert.Equal(new[] { "Pressure", "Temperature" }, Labels(result));
+        }
+
+        [Fact]
+        public void ASelectorWithAHashLiteralPrefabIsResolvedToo()
+        {
+            var result = Complete(
+                "device pumps = all(#\"StructureVolumePump\");\n" +
+                "fn main() { pumps.| }\n", Environment());
+
+            Assert.Contains("Setting", Labels(result));
+            Assert.DoesNotContain("Temperature", Labels(result));
+        }
+
+        [Fact]
+        public void ALabelOnlySelectorUsesTheOneDeviceOnTheNetwork()
+        {
+            var environment = Environment();
+            environment.AddNetworkDevice(Sensor(), "roof");
+
+            var result = Complete(
+                "device roof = named(\"roof\");\n" +
+                "fn main() { roof.| }\n", environment);
+
+            Assert.Equal(new[] { "Pressure", "Temperature" }, Labels(result));
+        }
+
+        [Fact]
+        public void ALabelWrittenAsAHashLiteralIsResolvedToo()
+        {
+            var environment = Environment();
+            environment.AddNetworkDevice(Sensor(), "roof");
+
+            var result = Complete(
+                "device roof = named(#\"roof\");\n" +
+                "fn main() { roof.| }\n", environment);
+
+            Assert.Equal(new[] { "Pressure", "Temperature" }, Labels(result));
+        }
+
+        [Fact]
+        public void ALabelSharedByTwoPrefabsFallsBackToTheFullList()
+        {
+            var environment = Environment();
+            environment.AddNetworkDevice(Sensor(), "shared");
+            environment.AddNetworkDevice(Pump(), "shared");
+
+            var result = Complete(
+                "device mixed = named(\"shared\");\n" +
+                "fn main() { mixed.| }\n", environment);
+
+            // Two kinds of equipment under one label: no single property list, so the
+            // game's whole vocabulary comes back, as it did before we knew any better.
+            Assert.True(result.Items.Count > 10);
+        }
+
+        [Fact]
+        public void ASelectorWithAnUnknownPrefabFallsBackToTheFullList()
+        {
+            var result = Complete(
+                "device x = all(StructureNotInTheCatalog);\n" +
+                "fn main() { x.| }\n", Environment());
+
+            Assert.True(result.Items.Count > 10);
+        }
+
+        [Fact]
+        public void ASelectorDeviceShowsTheNetworkReading()
+        {
+            var environment = Environment();
+            environment.AddNetworkDevice(Sensor(), "roof",
+                new Dictionary<int, double> { [LogicPressure] = 101.0 });
+
+            var result = Complete(
+                "device roof = named(\"roof\");\n" +
+                "fn main() { roof.Pres| }\n", environment);
+
+            Assert.Equal("Pressure", result.Items[0].Label);
+            Assert.Contains("101", result.Items[0].Detail);
+        }
+
+        [Fact]
+        public void ASelectorDeviceWithSlotsOffersItsSlotProperties()
+        {
+            var result = Complete(
+                "device chutes = all(StructureChuteInlet);\n" +
+                "fn main() { var q = chutes.slot[0].| }\n", Environment());
+
+            Assert.Equal(CompletionContext.SlotProperty, result.Context);
+            Assert.Equal(new[] { "Quantity" }, Labels(result));
+        }
+
+        [Fact]
+        public void HoverOnASelectorDeviceNamesTheEquipment()
+        {
+            var environment = Environment();
+            environment.AddNetworkDevice(Pump(), "north",
+                new Dictionary<int, double> { [LogicSetting] = 42.0 });
+
+            var hover = Hover(
+                "device pu|mps = named(StructureVolumePump, \"north\");\n" +
+                "fn main() { }\n", environment);
+
+            Assert.Equal(HoverKind.Device, hover.Kind);
+            Assert.Contains(hover.Lines, line => line.Contains("Volume Pump"));
+            Assert.Contains(hover.Lines, line => line.Contains("42"));
+        }
+
+        [Fact]
+        public void HoverOnAPropertyOfASelectorDeviceChecksTheEquipment()
+        {
+            var hover = Hover(
+                "device sensors = all(StructureGasSensor);\n" +
+                "fn main() { var x = sensors.Set|ting; }\n", Environment());
+
+            Assert.Equal(HoverKind.DeviceProperty, hover.Kind);
+            Assert.Contains(hover.Lines, line => line.Contains("does NOT accept"));
+        }
+
         [Fact]
         public void AfterSlotItSuggestsSlotProperties()
         {

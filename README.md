@@ -172,6 +172,12 @@ data network as the housing, exactly as a pin does, so the data cable still has
 to get there; what it drops is having to register each device in one of the six
 slots.
 
+The editor follows a selector like it follows a pin: `led.` suggests that
+prefab's properties, with the network's current reading beside each one, and
+hovering `led` names the equipment. When only a label was written, the devices
+carrying it are asked; when they are all the same prefab, that is what is
+offered.
+
 Because a device is a fixed place in the world, both operands have to be known
 at compile time: a prefab name, a hash literal, a `const`, or text joined from
 them. A selector built from a running value is written where it is used, in the
@@ -452,6 +458,25 @@ pump.|
       Pressure    r   = 101.325
 ```
 
+A device declared from a selector gets the same list. `device led =
+named(StructureDiode, "led-dev")` names one prefab, so `led.` offers the diode's
+properties and nothing else - and the value alongside each one is what a batch
+read would give, averaged over every device the selector reaches:
+
+```
+led.|
+      On          rw  = 1
+      Color       rw  = 2
+      Setting     rw  = 0
+```
+
+`named("led-dev")` writes no prefab, so the data network is asked instead: when
+every device carrying that label is the same equipment, its properties are the
+ones offered. Two different prefabs answering to one label have no single list
+between them, and the full vocabulary comes back, as before. The same goes for
+`all(StructureWallLight).` written inline, and for `slot[i]` on a selector whose
+prefab has slots.
+
 It also completes pins and `db` (`device x = ` shows what is on each one, and
 offers `all` and `named` after them), prefab names inside `all(...)` and
 `#"..."`, slot properties, the names declared in the program itself, and the
@@ -479,8 +504,9 @@ The goal is for `all(DISPLAY).Setting = "OK"` to be caught right there, not on
 CONFIRM.
 
 **Hover with real values.** Hovering a device variable shows the equipment, the
-label, the hash and the value of every readable property at that moment. Over a
-property, it says whether that device accepts it and whether it is read only.
+label, the hash and the value of every readable property at that moment - on a
+selector device too, when the selector lands on a single kind of equipment. Over
+a property, it says whether that device accepts it and whether it is read only.
 Over a `#"..."`, it shows the hash and warns when the prefab does not exist.
 
 That is fed by the [device catalog](docs/device-catalog.md), scanned from the
