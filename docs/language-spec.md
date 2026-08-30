@@ -741,3 +741,68 @@ answer.
   `where` in front of it changes what the number means.
 - An array works everywhere a list does, minus the four methods that change it:
   every cell of an array is content, and there is no count to move.
+
+## 13. The game's named values
+
+Stationeers gives its logic values names, and IC10 writes them behind a group:
+`Color.Black`, `AirCon.Cold`, `GasType.Oxygen`. IZ spells them exactly the same
+way, so what is written on the wiki keeps working here.
+
+```iz
+device light  = d0;
+device cooler = d1;
+
+light.Color = Color.Green;
+cooler.Mode = AirCon.Cold;
+```
+
+A value **is** a number, not a type of its own. It folds at compile time, so
+`Color.Black` costs precisely what `7` costs, and it goes anywhere a number
+goes: arithmetic, comparisons, the value of a `const`, the length of an array.
+
+```iz
+const WARN = Color.Red;            // a const takes one
+var same = light.Color == WARN;    // and so does a comparison
+```
+
+The groups are read out of the game's own assembly, so they follow the game:
+
+| group | what it names |
+|---|---|
+| `LogicType` | every device property: `Pressure`, `Setting`, `On`... |
+| `LogicSlotType` | every slot property: `Occupied`, `Quantity`, `Charge`... |
+| `LogicBatchMethod` | `Average`, `Sum`, `Minimum`, `Maximum` |
+| `LogicReagentMode` | `Contents`, `Required`, `Recipe`, `TotalContents` |
+| `Color` | the twelve paintable colors |
+| `GasType` | `Oxygen`, `Nitrogen`, `Volatiles`, the liquids... |
+| `SlotClass` | what a slot accepts: `Battery`, `Ore`, `Tool`... |
+| `SortingClass` | what a sorter matches on |
+| `Sound` | every alarm an alarm speaker can play |
+| `AirCon`, `AirControl`, `Vent`, `FiltrationMode` | atmospherics modes |
+| `PowerMode`, `TransmitterMode`, `ElevatorMode`, `RobotMode` | device modes |
+| `EntityState`, `DaylightSensorMode`, `ConditionOperation` | sensors and logic |
+| `PrinterInstruction`, `SorterInstruction`, `TraderInstruction` | chip instructions |
+| `RocketMode`, `ReEntryProfile`, `NodeType`, `ShuttleType` | rockets and trading |
+| `HashType`, `DisplayMode`, `SettingDisplayMode` | display and hash modes |
+
+Where IC10 writes a value with no group at all - `Average`, `Contents` - IZ
+requires the group in front of it, so that reaching one of the game's values
+always looks the same.
+
+Two rules keep them out of the way of a program's own names:
+
+- A declaration wins. `var Color = 3;` shadows the group, exactly as it shadows
+  anything else; `Color.Black` after that is a field access on a `num` and fails
+  as one.
+- A group name on its own is not a value. `var c = Color;` is an undefined name:
+  only `Group.Value` means something.
+
+A misspelled value is a compile error with the nearest name attached, the same
+treatment a misspelled property gets:
+
+```
+error IZ324 (4:21): 'Color' has no value named 'Blck'; did you mean 'Black'?
+```
+
+In the editor, `Color.` opens the list of that group's values with the number
+each one stands for, and hovering either half says what it is.

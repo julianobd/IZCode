@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>IZCode</Name>
   <Author>julianobd</Author>
-  <Version>0.1.4</Version>
+  <Version>0.1.5</Version>
   <ModID>izcode</ModID>
   <Description>[h1]IZCode - Structured Programming for Stationeers[/h1]
 
@@ -71,7 +71,7 @@ Globals keep their values across ticks.
 
 [h3]Arrays and Structs[/h3]
 
-Arrays and structs live in the VM heap and are laid out at compile time. There is no runtime allocator or garbage collector.
+Arrays and structs live in the VM heap, laid out at compile time. No allocator, no GC.
 
 [code]
 var samples: num[8];
@@ -83,11 +83,11 @@ struct Gauge {
 }
 [/code]
 
-Array length is part of the type, and [code]len(a)[/code] is resolved at compile time. Aggregates are passed by reference. Recursive calls get their own local storage.
+Array length is part of the type; [code]len(a)[/code] is compile-time. Aggregates pass by reference.
 
 [h3]Lists and Queries[/h3]
 
-Lists are fixed-size arrays with a count, providing LINQ-style queries:
+Fixed-size arrays with a count, plus LINQ-style queries:
 
 [code]
 var rooms: list Room[8];
@@ -124,20 +124,25 @@ var p = sensor.Pressure;
 pump.On = true;
 [/code]
 
-Invalid properties produce compile-time errors with suggestions:
+Invalid properties are compile errors: [code]Presure[/code] answers [i]did you mean Pressure?[/i]
 
-[code]
-Presure
-[/code]
-
-[b]Error:[/b] Unknown device property. Did you mean [b]Pressure?[/b]
-
-[b]db[/b] is the device the chip is installed in, and the only way to reach it: nothing can be wired to it. In a circuit housing it is the housing; in a hardsuit, which holds a chip in its own slot, it is the suit, so a program can read its own PressureExternal and drive its AC. On a suit the six pins are the wearer's slots: d0 helmet, d1 backpack, d2 toolbelt, d3 glasses, d4 and d5 hands.
+[b]db[/b] is the device the chip is installed in, and the only way to reach it: nothing can be wired to it. In a circuit housing it is the housing; in a hardsuit it is the suit, so a program can read its own PressureExternal and drive its AC. On a suit the six pins are the wearer's slots: d0 helmet, d1 backpack, d2 toolbelt, d3 glasses, d4 and d5 hands.
 
 [code]
 device self = db;
 self.Setting = 1;
 [/code]
+
+[h3]Game Constants[/h3]
+
+The game's named values, spelled as IC10 spells them:
+
+[code]
+light.Color = Color.Green;
+cooler.Mode = AirCon.Cold;
+[/code]
+
+All 30 groups come from the game itself: Color, GasType, SlotClass, SortingClass, Sound, AirCon, AirControl, Vent, PowerMode, RobotMode, EntityState, LogicType and the rest. Each value folds to its number at compile time, and a typo is a compile error with the nearest name.
 
 [h3]Batch Operations[/h3]
 
@@ -151,7 +156,7 @@ named(StructureVolumePump, "north").On = true;
 var avg = all(StructureGasSensor).Pressure;
 [/code]
 
-A selector can also be given a name, and is then used like a device on a pin:
+A selector can be named and then used like a device on a pin:
 
 [code]
 device led = named(StructureDiode, #"led-dev");
@@ -162,7 +167,7 @@ Prefab names, [code]#"hash"[/code] literals and constants are compile-time value
 
 [h3]Text[/h3]
 
-Strings are real runtime values and can be stored in variables, parameters, returns, arrays and structs.
+Strings are real runtime values: variables, parameters, returns, arrays and structs.
 
 [code]
 var label = "vent-" + side;
@@ -197,7 +202,7 @@ fn gcd(a: num, b: num) -> num {
 }
 [/code]
 
-Recursion is protected by a call-depth limit with a clean runtime error.
+A call-depth limit turns runaway recursion into a clean error.
 
 [h3]Operators and Math[/h3]
 
@@ -213,7 +218,7 @@ Math and trigonometry functions are available, along with [b]len[/b], [b]hash[/b
 
 [code]sleep(2)[/code] suspends execution.
 
-Without either, the VM automatically preempts execution when the budget is reached.
+Without either, the VM preempts when the budget runs out.
 
 [h2]THE EDITOR, UPGRADED[/h2]
 
@@ -231,9 +236,9 @@ The standard Stationeers editor uses 128 independent text fields. IZ mode turns 
 
 [h3]Wiring-Aware Completion[/h3]
 
-The editor knows which device is connected to each pin. Typing [code]pump.[/code] suggests the properties of that specific device, including live values.
+The editor knows what is on each pin: [code]pump.[/code] suggests that device's properties, with live values.
 
-It also completes pins, prefab names, slot properties, list queries and your own declarations.
+It also completes pins, prefab names, slot properties, game constants, list queries and your own declarations.
 
 [h3]Live Errors[/h3]
 
@@ -265,7 +270,7 @@ Enable IZCode in the mods menu. [code][IZCode][/code] in [code]Player.log[/code]
 
 [h2]SAFE TO TRY[/h2]
 
-Because [code]#iz[/code] is a valid comment to the IC10 parser, a chip containing IZ code does not break for players who do not have IZCode installed.
+[code]#iz[/code] is a valid IC10 comment, so a chip with IZ code does not break for players without IZCode.
 
 Example programs are included in [code]samples/[/code], covering pressure control, solar tracking, list queries and a full hardsuit controller.
 
@@ -273,7 +278,7 @@ Example programs are included in [code]samples/[/code], covering pressure contro
 
 [b]Multiplayer has NOT been tested.[/b]
 
-Every client and the server need the mod installed, and VM behavior in multiplayer is currently unknown. Use it at your own risk and report your findings on the issue tracker.
+Every client and the server need the mod installed. Report your findings on the issue tracker.
 
 [h2]LINKS[/h2]
 
@@ -288,20 +293,9 @@ Every client and the server need the mod installed, and VM behavior in multiplay
 [i]IZCode - Structured programming for Stationeers.[/i]
 </Description>
   <ChangeLog>
-===== 0.1.4 =========================================================
+===== 0.1.5 =========================================================
 
-BIGGER PROGRAMS. The editor's 128 lines of 90 characters, 4096 bytes in all, are
-the size of the game's own input fields. In IZ mode the code area is what holds
-the program and what gets saved comes from there, so the ceiling is now 2000
-lines of 200 characters, 16000 bytes - as much as TextMeshPro can draw. Deleting
-the '#iz' marker no longer costs what is past the 128th line: type it again and
-the program comes back whole.
-
-COPY, PASTE AND CLEAR. The three buttons wrote straight into the 128 lines, and
-the code area put its own text back over them on the next frame, so they looked
-inert. They work now, and carry the whole program: pasting a 400 line script
-keeps its 400 lines.
-
+- Added default game constants.
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>

@@ -35,6 +35,7 @@ fn main() {
 | Text | `HASH("name")`, and the text is gone | a real `str`: joined, compared and hashed while it runs |
 | Data structures | 16 loose registers | `struct`, arrays and lists, in a heap the compiler lays out |
 | Going through them | a loop and a counter, by hand | `where`, `orderBy`, `sum`, compiled into one loop |
+| The game's values | `Color.Black`, and a typo runs anyway | `Color.Black`, checked and folded at compile time |
 
 The line that matters most is *State between ticks*: **the IZVm is
 preemptive**. A `loop { }` with no `yield` freezes nothing: the VM runs its
@@ -72,6 +73,42 @@ var worst = rooms.where(x => x.pressure > LIMIT)
 That is **one loop** over the cells, with the lambdas inlined into it: nothing is
 allocated between one method and the next, and there is no call per element. See
 [Lists](#lists), [Queries](#queries) and `samples/queries.iz`.
+
+## The game's named values
+
+Stationeers names its logic values, and IC10 writes them behind a group:
+`Color.Black`, `AirCon.Cold`, `GasType.Oxygen`. IZ spells them the same way, so
+what is written on the wiki keeps working here:
+
+```iz
+device light  = d0;
+device cooler = d1;
+
+light.Color = Color.Green;
+cooler.Mode = AirCon.Cold;
+```
+
+A value **is** a number, folded at compile time. `Color.Black` costs precisely
+what `7` costs, and it goes anywhere a number goes - arithmetic, comparisons,
+the value of a `const`, the length of an array. What it buys is that the name is
+checked:
+
+```
+error IZ324 (4:21): 'Color' has no value named 'Blck'; did you mean 'Black'?
+```
+
+All 30 groups the game exposes are there - `LogicType`, `LogicSlotType`,
+`Color`, `GasType`, `SlotClass`, `SortingClass`, `Sound`, `AirCon`,
+`AirControl`, `Vent`, `PowerMode`, `RobotMode`, `EntityState`,
+`PrinterInstruction`, `RocketMode` and the rest - read out of the game's own
+assembly by the generator, so they follow the game rather than a copy of it.
+Where IC10 writes a value with no group at all (`Average`, `Contents`), IZ asks
+for the group in front of it, so reaching one of the game's values always looks
+the same.
+
+A name a program declares always wins: `var Color = 3;` shadows the group the
+way it shadows anything else. See section 13 of
+[docs/language-spec.md](docs/language-spec.md) and `samples/game-constants.iz`.
 
 ## Devices, and the one the chip is in
 
@@ -417,7 +454,9 @@ pump.|
 
 It also completes pins and `db` (`device x = ` shows what is on each one, and
 offers `all` and `named` after them), prefab names inside `all(...)` and
-`#"..."`, slot properties, and the names declared in the program itself.
+`#"..."`, slot properties, the names declared in the program itself, and the
+game's named values - `Color.` lists the twelve colors with the number each one
+stands for.
 
 `Tab` accepts the suggestion, `Ctrl`+arrows move through the list, `Esc` closes
 it, `Ctrl+Space` opens the full list. With the list closed, `Tab` goes back to
@@ -496,8 +535,9 @@ dotnet build -p:StationeersDir="D:\Steam\steamapps\common\Stationeers"
 
 ### After a Stationeers update
 
-The device property table (`LogicType`) is generated from the game itself. When
-Stationeers updates, regenerate it:
+The device property table (`LogicType`, `LogicSlotType`) and the game's named
+values (`Color`, `GasType`, and the 27 other groups) are generated from the game
+itself. When Stationeers updates, regenerate them:
 
 ```bash
 dotnet run tools/GenLogicTypes/gen.cs
@@ -587,6 +627,8 @@ Working and covered by tests:
   string table that interns what repeats and collects what nobody points at
 - 33 native functions (`abs`, `sqrt`, `clamp`, `text`, `sub`, …), and `len` over
   an array, a list or a string
+- the game's named values (`Color.Black`, `AirCon.Cold`, `GasType.Oxygen`),
+  30 groups read out of Assembly-CSharp, folded at compile time and checked
 - errors with line, column, source snippet and a name suggestion
 - device catalog: format, reading that tolerates a truncated file, JSON export
 - completion and hover engines, including the offset seam with the editor

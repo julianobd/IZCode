@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using IZLang.Binding;
 using IZLang.Diagnostics;
 using IZLang.Lexing;
 
@@ -26,6 +27,7 @@ namespace IZLang.Editor
         public string Hash = "C792EA";        // #"StructureWallLight"
         public string Identifier = "D8E1EA";
         public string Property = "7DD3FC";    // after a '.'
+        public string Constant = "FFB86C";    // Color, AirCon, GasType...
         public string Function = "86EFAC";    // followed by '('
         public string Operator = "8FA1B3";
         public string Invalid = "FF5555";
@@ -106,7 +108,7 @@ namespace IZLang.Editor
                         AppendTrivia(sb, line.Substring(position, start - position), theme, flavor);
 
                     string text = line.Substring(start, token.Span.Length);
-                    sb.Append(Colored(ColorFor(token.Kind, PreviousKind(tokens, i), NextKind(tokens, i), theme),
+                    sb.Append(Colored(ColorFor(token, PreviousKind(tokens, i), NextKind(tokens, i), theme),
                                       Escape(text, flavor)));
 
                     position = start + token.Span.Length;
@@ -192,10 +194,10 @@ namespace IZLang.Editor
         private static TokenKind NextKind(List<Token> tokens, int index) =>
             index + 1 < tokens.Count ? tokens[index + 1].Kind : TokenKind.EndOfFile;
 
-        private static string ColorFor(TokenKind kind, TokenKind previous, TokenKind next,
+        private static string ColorFor(Token token, TokenKind previous, TokenKind next,
                                        HighlightTheme theme)
         {
-            switch (kind)
+            switch (token.Kind)
             {
                 case TokenKind.Number: return theme.Number;
                 case TokenKind.String: return theme.String;
@@ -207,6 +209,12 @@ namespace IZLang.Editor
                     // function. It is the same distinction the completion engine makes.
                     if (previous == TokenKind.Dot) return theme.Property;
                     if (next == TokenKind.LParen) return theme.Function;
+
+                    // 'Color' in 'Color.Black' is one of the game's groups, not a name
+                    // the player declared. Painting it apart is what says so.
+                    if (next == TokenKind.Dot && GameEnums.IsConstantGroup(token.Text))
+                        return theme.Constant;
+
                     return theme.Identifier;
 
                 case TokenKind.KwNum:
@@ -225,7 +233,7 @@ namespace IZLang.Editor
                     return theme.BoolLiteral;
 
                 default:
-                    return IsKeyword(kind) ? theme.Keyword : theme.Operator;
+                    return IsKeyword(token.Kind) ? theme.Keyword : theme.Operator;
             }
         }
 

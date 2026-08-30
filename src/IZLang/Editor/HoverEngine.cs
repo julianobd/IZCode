@@ -129,6 +129,19 @@ namespace IZLang.Editor
             if (IsInsideSelector(tokens, index))
                 return DescribePrefab(token.Text, token.Span, environment);
 
+            // 'Color' on its own: the group, not a value of it.
+            var constantGroup = GameEnums.FindConstantGroup(token.Text);
+            if (constantGroup != null)
+            {
+                return new HoverInfo(HoverKind.Constant, token.Text,
+                    new[]
+                    {
+                        "a group of the game's values - write " + token.Text + ".<value>",
+                        constantGroup.Count + " values",
+                    },
+                    token.Span);
+            }
+
             if (Vm.Builtins.TryGet(token.Text, out var builtin))
             {
                 return new HoverInfo(HoverKind.Builtin, builtin.Name + "(" + builtin.Arity + " arg)",
@@ -261,6 +274,25 @@ namespace IZLang.Editor
         {
             var token = tokens[index];
             string name = token.Text;
+
+            // 'Color.Black' - one of the game's named values, not a device property.
+            if (index >= 2 && tokens[index - 2].Kind == TokenKind.Identifier &&
+                DeclarationScanner.Find(declarations, tokens[index - 2].Text) == null)
+            {
+                string group = tokens[index - 2].Text;
+                var values = GameEnums.FindConstantGroup(group);
+
+                if (values != null)
+                {
+                    var found = values.TryGetValue(name, out int constant);
+                    return new HoverInfo(HoverKind.Constant, group + "." + name,
+                        found
+                            ? new[] { "one of the game's values", "= " + constant }
+                            : new[] { "'" + group + "' has no value named '" + name + "'" +
+                                      GameEnums.Suggest(values.Keys, name) },
+                        token.Span);
+                }
+            }
 
             bool isSlot = index >= 2 && tokens[index - 2].Kind == TokenKind.RBracket;
 

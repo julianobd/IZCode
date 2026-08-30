@@ -1,0 +1,47 @@
+#iz
+// The game's named values, the same ones IC10 writes as Color.Black or
+// AirCon.Cold. Each one folds to its number at compile time, so writing
+// Color.Red costs exactly what writing 4 costs - and says what it means.
+//
+// This one drives a wall light and an air conditioner off a gas sensor:
+// green while the room is breathable, red once it is not.
+//
+// Wiring: d0 gas sensor, d1 wall light, d2 air conditioner.
+
+device sensor = d0;
+device light  = d1;
+device cooler = d2;
+
+// A value works anywhere a number does, including as the value of a const.
+const OK_COLOR   = Color.Green;
+const WARN_COLOR = Color.Red;
+
+const MIN_PRESSURE = 90.0;      // kPa
+const MAX_TEMP     = 298.15;    // K, about 25 C
+
+fn main() {
+    light.On = true;
+
+    loop {
+        var pressure = sensor.Pressure;
+        var temperature = sensor.Temperature;
+
+        if pressure > MIN_PRESSURE && temperature < MAX_TEMP {
+            light.Color = OK_COLOR;
+        } else {
+            light.Color = WARN_COLOR;
+        }
+
+        // AirCon.Cold makes the unit pull heat out of the room, AirCon.Hot
+        // pushes it in. The property takes a number, and that is what the
+        // name is.
+        if temperature > MAX_TEMP {
+            cooler.Mode = AirCon.Cold;
+            cooler.On = true;
+        } else {
+            cooler.On = false;
+        }
+
+        sleep(1);
+    }
+}

@@ -56,6 +56,16 @@ namespace IZLang.Binding
         /// </summary>
         private readonly List<Symbol> _declaredData = new List<Symbol>();
 
+        /// <summary>
+        /// Where a bad 'Group.Value' was already reported, by the offset of the name
+        /// after the dot.
+        ///
+        /// The constant folder and the emission pass walk the same expression, and
+        /// the folder also runs speculatively in a few places - without this, one
+        /// typo would be reported two or three times.
+        /// </summary>
+        private readonly HashSet<int> _reportedConstants = new HashSet<int>();
+
         /// <summary>Body of each declared struct, kept so the fields can be resolved on demand.</summary>
         private readonly Dictionary<StructSymbol, StructDeclaration> _structBodies =
             new Dictionary<StructSymbol, StructDeclaration>();
@@ -1303,6 +1313,15 @@ namespace IZLang.Binding
                 return;
             }
 
+            // Color.Black = 1 - the game's named values are fixed numbers.
+            if (IsConstantGroupAccess(member))
+            {
+                _diagnostics.Report(IZErrorCode.AssignToConst, assignment.Target.Span,
+                    "'" + ((NameExpression)member.Target).Name + "." + member.MemberName +
+                    "' is one of the game's values and cannot be assigned to");
+                return;
+            }
+
             // p.x = 1 - a struct field.
             EmitHeapAssignment(EmitFieldAddress(member, forWrite: true), assignment, line);
         }
@@ -2127,6 +2146,15 @@ namespace IZLang.Binding
             if (member.Target is IndexExpression indexed && IsDeviceSlotAccess(indexed))
                 return EmitSlotRead(indexed, member, line);
 
+            // Color.Black, AirCon.Cold, GasType.Oxygen - one of the game's named
+            // values. It folds to the number it stands for, so it costs nothing.
+            if (IsConstantGroupAccess(member))
+            {
+                TryResolveConstant(member, out int constant);
+                EmitConstant(constant, line);
+                return IZType.Num;
+            }
+
             // p.x - a struct field. The address is the value when the field is itself
             // an array or a struct, so only a scalar is actually read.
             var fieldType = EmitFieldAddress(member);
@@ -2215,20 +2243,10 @@ namespace IZLang.Binding
 
         private static string SuggestFieldName(StructSymbol structSymbol, string name)
         {
-            string? best = null;
-            int bestDistance = int.MaxValue;
+            var names = new List<string>(structSymbol.Fields.Count);
+            foreach (var field in structSymbol.Fields) names.Add(field.Name);
 
-            foreach (var field in structSymbol.Fields)
-            {
-                int distance = EditDistance(name, field.Name, bestDistance);
-                if (distance < bestDistance)
-                {
-                    bestDistance = distance;
-                    best = field.Name;
-                }
-            }
-
-            return best != null && bestDistance <= 3 ? "; did you mean '" + best + "'?" : string.Empty;
+            return GameEnums.Suggest(names, name);
         }
 
         /// <summary>
@@ -2456,63 +2474,41 @@ namespace IZLang.Binding
 
             _diagnostics.Report(IZErrorCode.UnknownLogicType, member.MemberToken.Span,
                 "'" + member.MemberName + "' is not a known device property" +
-                SuggestLogicType(member.MemberName));
+                GameEnums.Suggest(GameEnums.LogicTypeByName.Keys, member.MemberName));
             return false;
         }
 
         /// <summary>
-        /// A typo in a property name is the most common mistake here, and the list
-        /// has hundreds of names - so suggesting the closest one is worth it.
+        /// Is this 'Color.Black' - a name that is one of the game's constant groups
+        /// and nothing else?
+        ///
+        /// A declaration always wins: naming a variable 'Color' shadows the group,
+        /// the same way it shadows anything else. Nothing is marked as used here,
+        /// because this only asks how to read the expression.
         /// </summary>
-        private static string SuggestLogicType(string name)
-        {
-            string? best = null;
-            int bestDistance = int.MaxValue;
+        private bool IsConstantGroupAccess(MemberExpression member) =>
+            member.Target is NameExpression name &&
+            _scope.LookupNoUse(name.Name) == null &&
+            GameEnums.IsConstantGroup(name.Name);
 
-            foreach (var candidate in GameEnums.LogicTypeByName.Keys)
+        /// <summary>
+        /// Resolves 'Color.Black' to its number. Only call it once
+        /// <see cref="IsConstantGroupAccess"/> has said the group exists.
+        /// </summary>
+        private bool TryResolveConstant(MemberExpression member, out int value)
+        {
+            string group = ((NameExpression)member.Target).Name;
+            if (GameEnums.TryGetConstant(group, member.MemberName, out value)) return true;
+
+            if (_reportedConstants.Add(member.MemberToken.Span.Start))
             {
-                if (Math.Abs(candidate.Length - name.Length) > 3) continue;
-                int distance = EditDistance(name, candidate, bestDistance);
-                if (distance < bestDistance)
-                {
-                    bestDistance = distance;
-                    best = candidate;
-                }
+                var values = GameEnums.FindConstantGroup(group)!;
+                _diagnostics.Report(IZErrorCode.UnknownConstant, member.MemberToken.Span,
+                    "'" + group + "' has no value named '" + member.MemberName + "'" +
+                    GameEnums.Suggest(values.Keys, member.MemberName));
             }
 
-            return best != null && bestDistance <= 3 ? "; did you mean '" + best + "'?" : string.Empty;
-        }
-
-        /// <summary>Levenshtein with a cutoff: stops as soon as it goes past <paramref name="limit"/>.</summary>
-        private static int EditDistance(string a, string b, int limit)
-        {
-            int lengthA = a.Length, lengthB = b.Length;
-            if (Math.Abs(lengthA - lengthB) >= limit) return limit;
-
-            var previous = new int[lengthB + 1];
-            var current = new int[lengthB + 1];
-            for (int j = 0; j <= lengthB; j++) previous[j] = j;
-
-            for (int i = 1; i <= lengthA; i++)
-            {
-                current[0] = i;
-                int rowMin = current[0];
-
-                for (int j = 1; j <= lengthB; j++)
-                {
-                    int cost = char.ToLowerInvariant(a[i - 1]) == char.ToLowerInvariant(b[j - 1]) ? 0 : 1;
-                    current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1), previous[j - 1] + cost);
-                    if (current[j] < rowMin) rowMin = current[j];
-                }
-
-                if (rowMin >= limit) return limit;
-
-                var swap = previous;
-                previous = current;
-                current = swap;
-            }
-
-            return previous[lengthB];
+            return false;
         }
 
         // ==================================================================
@@ -2585,6 +2581,15 @@ namespace IZLang.Binding
                         return variable.Type;
                     }
                     return IZType.Error;
+
+                // Color.Black is as constant as 7 is, so it may size an array or
+                // seed a 'const' like any other literal. An unknown value is still
+                // a number - it folds to 0, and the error is already reported - so
+                // that a typo does not also draw 'this is not a constant'.
+                case MemberExpression member when IsConstantGroupAccess(member):
+                    TryResolveConstant(member, out int constant);
+                    value = constant;
+                    return IZType.Num;
 
                 case UnaryExpression unary:
                 {

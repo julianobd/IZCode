@@ -57,6 +57,7 @@ namespace IZLang.Diagnostics
         UnknownField = 321,
         IndexOutOfRange = 322,
         InvalidArrayLength = 323,
+        UnknownConstant = 324,
 
         // --- limits: 4xx ---
         TooManyConstants = 400,

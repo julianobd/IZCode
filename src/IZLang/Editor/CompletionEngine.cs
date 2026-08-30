@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using IZLang.Binding;
 using IZLang.Devices;
 using IZLang.Diagnostics;
@@ -86,6 +87,8 @@ namespace IZLang.Editor
         StructField,
         /// <summary>After a list, an array or a query and a '.': the query methods.</summary>
         ListMethod,
+        /// <summary>After the name of one of the game's constant groups and a '.': its values.</summary>
+        ConstantValue,
     }
 
     /// <summary>
@@ -198,7 +201,7 @@ namespace IZLang.Editor
             var items = new List<CompletionItem>();
             var context = Classify(source, tokens, prefixSpan.Start, declarations, structs,
                                    out int pin, out string? prefabName, out var structType,
-                                   out bool wholeList);
+                                   out bool wholeList, out string? constantGroup);
 
             // Blank line, nobody asked for anything: dumping the whole vocabulary over
             // the code gets in the way more than it helps. The other contexts came from
@@ -233,6 +236,10 @@ namespace IZLang.Editor
                     AddQueryMethods(items, prefixSpan, wholeList);
                     break;
 
+                case CompletionContext.ConstantValue:
+                    AddConstantValues(items, prefixSpan, constantGroup);
+                    break;
+
                 case CompletionContext.Prefab:
                 case CompletionContext.PrefabString:
                     AddPrefabs(items, prefixSpan, environment, prefix);
@@ -256,12 +263,14 @@ namespace IZLang.Editor
                                                   List<DeclaredStruct> structs,
                                                   out int pin, out string? prefabName,
                                                   out DeclaredStruct? structType,
-                                                  out bool wholeList)
+                                                  out bool wholeList,
+                                                  out string? constantGroup)
         {
             pin = -1;
             prefabName = null;
             structType = null;
             wholeList = false;
+            constantGroup = null;
 
             // Inside #"..."? The lexer swallows it all into one token, so looking back
             // at the raw text is more direct than looking at the tokens.
@@ -303,7 +312,17 @@ namespace IZLang.Editor
                 // <name>.  -> when it is a declared device, we know the pin
                 if (index >= 1 && tokens[index - 1].Kind == TokenKind.Identifier)
                 {
-                    var symbol = DeclarationScanner.Find(declarations, tokens[index - 1].Text);
+                    string name = tokens[index - 1].Text;
+                    var symbol = DeclarationScanner.Find(declarations, name);
+
+                    // 'Color.' -> the game's values. A declaration of the same name
+                    // wins, exactly as it does in the compiler.
+                    if (symbol == null && GameEnums.IsConstantGroup(name))
+                    {
+                        constantGroup = name;
+                        return CompletionContext.ConstantValue;
+                    }
+
                     if (symbol != null && symbol.Kind == DeclaredKind.Device) pin = symbol.Pin;
                     return CompletionContext.DeviceProperty;
                 }
@@ -688,6 +707,20 @@ namespace IZLang.Editor
             }
         }
 
+        /// <summary>The values of one group, in the order the game declares them.</summary>
+        private static void AddConstantValues(List<CompletionItem> items, SourceSpan span,
+                                              string? group)
+        {
+            var values = GameEnums.FindConstantGroup(group);
+            if (values == null) return;
+
+            foreach (var pair in values)
+            {
+                items.Add(new CompletionItem(pair.Key, CompletionKind.Constant,
+                    pair.Value.ToString(CultureInfo.InvariantCulture), span));
+            }
+        }
+
         private static void AddGeneral(List<CompletionItem> items, SourceSpan span,
                                        List<DeclaredSymbol> declarations, IEditorEnvironment environment)
         {
@@ -741,6 +774,15 @@ namespace IZLang.Editor
             {
                 if (!seen.Add(keyword)) continue;
                 items.Add(new CompletionItem(keyword, CompletionKind.Keyword, string.Empty, span, 3));
+            }
+
+            // The game's constant groups. They go last: on their own they are not a
+            // value, and what follows the dot is where the list really helps.
+            foreach (var group in GameEnums.ConstantGroupNames)
+            {
+                if (!seen.Add(group)) continue;
+                items.Add(new CompletionItem(group, CompletionKind.Constant,
+                    GameEnums.FindConstantGroup(group)!.Count + " values", span, 4));
             }
         }
 
