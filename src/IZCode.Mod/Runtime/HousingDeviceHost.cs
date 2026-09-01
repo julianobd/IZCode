@@ -104,6 +104,13 @@ namespace IZCode.Mod.Runtime
             return true;
         }
 
+        /// <summary>
+        /// 'isset': is a device on the pin right now? The same question the game's own
+        /// 'sdse' asks, and answered the same way - a pin with nothing on it, a suit
+        /// with no wearer and a chip in no holder are all simply false.
+        /// </summary>
+        public bool IsDeviceConnected(int pin) => GetDevice(pin) != null;
+
         public bool TryReadSlot(int pin, int slotIndex, int logicSlotType, out double value)
         {
             value = 0.0;

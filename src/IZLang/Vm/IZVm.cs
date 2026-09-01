@@ -410,6 +410,9 @@ namespace IZLang.Vm
                                 NotConnected(instruction.A));
                         break;
                     }
+                    case OpCode.DevicePresent:
+                        if (!Push(_host.IsDeviceConnected(instruction.A) ? 1.0 : 0.0)) return State;
+                        break;
                     case OpCode.DeviceSlotLoad:
                     {
                         if (_stackTop <= 0) return Underflow();

@@ -165,5 +165,12 @@ namespace IZLang.Vm
 
         /// <summary>Stops the program with the message in Strings[A].</summary>
         Trap,
+
+        /// <summary>
+        /// Pushes 1.0 when pin A has a device connected, and 0.0 when it is empty.
+        /// The one device instruction that cannot fail: an empty pin is an answer,
+        /// not a runtime error.
+        /// </summary>
+        DevicePresent,
     }
 }

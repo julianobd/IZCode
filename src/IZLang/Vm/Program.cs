@@ -149,6 +149,9 @@ namespace IZLang.Vm
                 case OpCode.DeviceStore:
                     return "d" + instruction.A + " logic:" + instruction.B;
 
+                case OpCode.DevicePresent:
+                    return DevicePins.Name(instruction.A);
+
                 case OpCode.LoadLocal:
                 case OpCode.StoreLocal:
                 case OpCode.LoadGlobal:

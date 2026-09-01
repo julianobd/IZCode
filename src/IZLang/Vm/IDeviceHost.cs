@@ -35,6 +35,12 @@ namespace IZLang.Vm
         /// <summary>false when the pin is empty, or the LogicType is not writable.</summary>
         bool TryWriteDevice(int pin, int logicType, double value);
 
+        /// <summary>
+        /// Is there a device on the pin at all? Asked by 'isset', and never an error:
+        /// an empty pin is the answer the program wanted.
+        /// </summary>
+        bool IsDeviceConnected(int pin);
+
         bool TryReadSlot(int pin, int slotIndex, int logicSlotType, out double value);
 
         bool TryBatchRead(double prefabHash, int logicType, BatchAggregation aggregation, out double value);
@@ -107,6 +113,9 @@ namespace IZLang.Vm
             value = _deviceValues.TryGetValue(Key(pin, logicType), out double v) ? v : 0.0;
             return true;
         }
+
+        public bool IsDeviceConnected(int pin) =>
+            DevicePins.IsValid(pin) && _connectedPins.Contains(pin);
 
         public bool TryWriteDevice(int pin, int logicType, double value)
         {

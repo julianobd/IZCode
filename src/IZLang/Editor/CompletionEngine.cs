@@ -807,6 +807,9 @@ namespace IZLang.Editor
             if (seen.Add("sleep"))
                 items.Add(new CompletionItem("sleep", CompletionKind.Builtin, "1 arg", span, 2));
 
+            if (seen.Add("isset"))
+                items.Add(new CompletionItem("isset", CompletionKind.Builtin, "1 dev", span, 2));
+
             foreach (var keyword in Keywords)
             {
                 if (!seen.Add(keyword)) continue;

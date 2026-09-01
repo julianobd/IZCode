@@ -229,6 +229,150 @@ namespace IZLang.Tests
             Assert.Contains("Hardsuit", text);
         }
 
+        // ------------------------------------------------------------------
+        //  isset - is there a device on the pin?
+        // ------------------------------------------------------------------
+
+        [Fact]
+        public void IsSetIsFalseOnAPinThatWasNeverConnected()
+        {
+            var host = TestHost.Execute(
+                "device probe = d1;\n" +
+                "device out   = d0;\n" +
+                "fn main() { out.Setting = isset(probe); }\n",
+                h => h.Connect(0));
+
+            Assert.Equal(0.0, host.Writes.Single(w => w.Pin == 0).Value);
+        }
+
+        [Fact]
+        public void IsSetIsTrueOnceThePinIsConnected()
+        {
+            var host = TestHost.Execute(
+                "device probe = d1;\n" +
+                "device out   = d0;\n" +
+                "fn main() { out.Setting = isset(probe); }\n",
+                h => { h.Connect(0); h.Connect(1); });
+
+            Assert.Equal(1.0, host.Writes.Single(w => w.Pin == 0).Value);
+        }
+
+        [Fact]
+        public void APinCanBeWrittenStraightIntoTheCall()
+        {
+            var host = TestHost.Execute(
+                "device out = d0;\n" +
+                "fn main() { out.Setting = isset(d3); }\n",
+                h => { h.Connect(0); h.Connect(3); });
+
+            Assert.Equal(1.0, host.Writes.Single(w => w.Pin == 0).Value);
+        }
+
+        [Fact]
+        public void AGuardedProgramRunsToTheEndWithNothingConnected()
+        {
+            // The point of the whole feature: nothing connected anywhere, and still
+            // no error - the program simply skips the block.
+            var program = TestHost.CompileOk(
+                "device helmet = d0;\n" +
+                "fn main() {\n" +
+                "    if isset(helmet) { helmet.On = true; }\n" +
+                "}\n");
+
+            var host = new MemoryDeviceHost();
+            var vm = new IZVm(program, host);
+
+            Assert.Equal(ExecutionResult.Halted, TestHost.RunToCompletion(vm));
+            Assert.Null(vm.Error);
+            Assert.Empty(host.Writes);
+        }
+
+        [Fact]
+        public void IsSetOnDbFollowsTheHousing()
+        {
+            const string source =
+                "device suit = db;\n" +
+                "device out  = d0;\n" +
+                "fn main() { out.Setting = isset(suit); }\n";
+
+            var installed = TestHost.Execute(source,
+                h => { h.Connect(0); h.Connect(DevicePins.Housing); });
+            Assert.Equal(1.0, installed.Writes.Single(w => w.Pin == 0).Value);
+
+            var loose = TestHost.Execute(source, h => h.Connect(0));
+            Assert.Equal(0.0, loose.Writes.Single(w => w.Pin == 0).Value);
+        }
+
+        [Fact]
+        public void ASelectorIsNotAPin()
+        {
+            var error = TestHost.CompileError(
+                "device lights = all(StructureWallLight);\n" +
+                "device out    = d0;\n" +
+                "fn main() { out.Setting = isset(lights); }\n",
+                IZErrorCode.NotADevice);
+
+            Assert.Contains("selector", error.Message);
+        }
+
+        [Fact]
+        public void ANumberIsNotADevice()
+        {
+            var error = TestHost.CompileError(
+                "device out = d0;\n" +
+                "fn main() {\n" +
+                "    var x = 1;\n" +
+                "    out.Setting = isset(x);\n" +
+                "}\n",
+                IZErrorCode.NotADevice);
+
+            Assert.Contains("declared with 'device'", error.Message);
+        }
+
+        [Fact]
+        public void IsSetTakesExactlyOneDevice()
+        {
+            var error = TestHost.CompileError(
+                "device a   = d0;\n" +
+                "device b   = d1;\n" +
+                "device out = d2;\n" +
+                "fn main() { out.Setting = isset(a, b); }\n",
+                IZErrorCode.WrongArgumentCount);
+
+            Assert.Contains("'isset'", error.Message);
+        }
+
+        [Fact]
+        public void AFunctionCannotBeCalledIsSet() =>
+            TestHost.CompileError(
+                "fn isset(x: num) -> num { return x; }\n" +
+                "fn main() { }\n",
+                IZErrorCode.DuplicateName);
+
+        [Fact]
+        public void IsSetIsOfferedByCompletion()
+        {
+            const string source = "fn main() { var x = is }\n";
+            int caret = source.IndexOf("is }") + 2;
+
+            var result = CompletionEngine.GetCompletions(source, caret, EmptyEditorEnvironment.Instance);
+
+            Assert.Contains(result.Items, i => i.Label == "isset");
+        }
+
+        [Fact]
+        public void HoverOnIsSetExplainsWhatItAnswers()
+        {
+            const string source = "device helmet = d0;\nfn main() { if isset(helmet) { } }\n";
+            int caret = source.IndexOf("isset") + 2;
+
+            var hover = HoverEngine.GetHover(source, caret, EmptyEditorEnvironment.Instance);
+
+            Assert.Equal(HoverKind.Builtin, hover.Kind);
+            Assert.Contains("dev", hover.Title);
+            Assert.Contains("connected", hover.ToText());
+        }
+
         [Fact]
         public void HoverOnDbWithNoHousingSaysSo()
         {

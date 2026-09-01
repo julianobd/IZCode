@@ -109,6 +109,21 @@ var p = sensor.Pressure;       // compile error if a GasSensor cannot read Press
 pump.On = true;                // error if the property is read-only
 ```
 
+`isset(dev) -> bool` answers whether the pin has a device on it right now:
+
+```iz
+device helmet = d0;
+
+if isset(helmet) { helmet.On = true; }
+```
+
+Without it, reading or writing an empty pin is a runtime error that stops the
+program until the device shows up. `isset` never fails: an empty pin is `false`.
+The argument is settled at compile time, so it is a device declared with
+`device`, a pin written straight into the call (`isset(d3)`, `isset(db)`), and
+nothing else - a name standing for `all(...)` or `named(...)` reaches a set
+rather than a pin, and is refused. It is IC10's `sdse`.
+
 ### 3.1 Slots
 
 ```iz
@@ -321,6 +336,7 @@ rand()                      // [0,1)
 nan() inf() isnan(x)
 sleep(seconds)              // hands the tick back for N seconds
 yield                       // a statement, not a function
+isset(dev)                  // is there a device on that pin? (section 3)
 ```
 
 Over text (section 11):

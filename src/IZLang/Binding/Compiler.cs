@@ -274,7 +274,8 @@ namespace IZLang.Binding
                                 "'" + function.Name + "' was already declared");
                         }
                         else if (Builtins.TryGet(function.Name, out _) ||
-                                 string.Equals(function.Name, "sleep", StringComparison.Ordinal))
+                                 string.Equals(function.Name, "sleep", StringComparison.Ordinal) ||
+                                 string.Equals(function.Name, "isset", StringComparison.Ordinal))
                         {
                             // A call resolves to the builtin first, so a function with
                             // the same name would never be reached. Saying so beats
@@ -1951,6 +1952,11 @@ namespace IZLang.Binding
             if (callee.Name == "len")
                 return EmitLen(call, line);
 
+            // 'isset' asks about a pin, not about a value on the stack: the device is
+            // a compile time thing, so the pin ends up in the instruction itself.
+            if (callee.Name == "isset")
+                return EmitIsSet(call, line);
+
             if (Builtins.TryGet(callee.Name, out var builtin))
             {
                 if (call.Arguments.Count != builtin.Arity)
@@ -2033,6 +2039,79 @@ namespace IZLang.Binding
 
             Emit(OpCode.Call, function.Index, function.Parameters.Count, line);
             return function.ReturnType;
+        }
+
+        /// <summary>
+        /// 'isset(dev)' - is there a device on that pin right now?
+        ///
+        /// Unlike every other call the argument is not evaluated: a device is a name
+        /// for a pin, settled at compile time, so the pin travels in operand A and
+        /// nothing is pushed for it.
+        /// </summary>
+        private IZType EmitIsSet(CallExpression call, int line)
+        {
+            if (call.Arguments.Count != 1)
+            {
+                _diagnostics.Report(IZErrorCode.WrongArgumentCount, call.Span,
+                    "'isset' takes 1 argument (the device), got " + call.Arguments.Count);
+                foreach (var argument in call.Arguments)
+                {
+                    // A device name is a use of it, but not a value: evaluating it
+                    // would pile a second diagnostic on top of the count.
+                    if (argument is NameExpression named &&
+                        _scope.Lookup(named.Name) is DeviceSymbol) continue;
+
+                    EmitExpression(argument);
+                    Emit(OpCode.Pop, 0, 0, line);
+                }
+                Emit(OpCode.PushZero, 0, 0, line);
+                return IZType.Bool;
+            }
+
+            var target = call.Arguments[0];
+
+            if (target is NameExpression name)
+            {
+                var symbol = _scope.Lookup(name.Name);
+
+                if (symbol is DeviceSymbol device)
+                {
+                    if (device.IsBatch)
+                    {
+                        _diagnostics.Report(IZErrorCode.NotADevice, target.Span,
+                            "'" + name.Name + "' is " + device.Description +
+                            ", and a selector reaches a set rather than one pin; " +
+                            "'isset' answers for a device declared on a pin");
+                        Emit(OpCode.PushZero, 0, 0, line);
+                        return IZType.Bool;
+                    }
+
+                    Emit(OpCode.DevicePresent, device.Pin, 0, line);
+                    return IZType.Bool;
+                }
+
+                // 'isset(d0)' - a pin written straight into the call, with no name
+                // declared for it. It means the same as a declared name would.
+                if (symbol == null && DevicePins.TryParse(name.Name, out int pin))
+                {
+                    Emit(OpCode.DevicePresent, pin, 0, line);
+                    return IZType.Bool;
+                }
+            }
+
+            _diagnostics.Report(IZErrorCode.NotADevice, target.Span,
+                "'isset' takes a device declared with 'device'");
+
+            // A name has nothing to run, and evaluating it would only add a second
+            // diagnostic on top of the one above. Anything else may have side effects.
+            if (!(target is NameExpression))
+            {
+                EmitExpression(target);
+                Emit(OpCode.Pop, 0, 0, line);
+            }
+
+            Emit(OpCode.PushZero, 0, 0, line);
+            return IZType.Bool;
         }
 
         private IZType EmitLen(CallExpression call, int line)

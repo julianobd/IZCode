@@ -155,6 +155,17 @@ namespace IZLang.Editor
                     new[] { "suspends the program and gives the tick back to the game" }, token.Span);
             }
 
+            if (string.Equals(token.Text, "isset", StringComparison.Ordinal))
+            {
+                return new HoverInfo(HoverKind.Builtin, "isset(dev) -> bool",
+                    new[]
+                    {
+                        "true when the pin has a device connected right now",
+                        "takes a device declared with 'device', or a pin like 'd0' and 'db'",
+                    },
+                    token.Span);
+            }
+
             if (DeclarationScanner.TryParsePin(token.Text, out int pin))
                 return DescribePin(pin, token.Span, environment);
 

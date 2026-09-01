@@ -145,6 +145,26 @@ restarts on the next tick and keeps trying. The moment the device is there it
 picks up again on its own and the LED goes out. Every other runtime error is a
 bug in the program: it stops for good, with the error line pointing at it.
 
+That recovery is what a forgotten cable deserves, and not what a program meant
+to run with whatever is there wants. `isset` asks first:
+
+```iz
+device helmet = d0;
+
+fn main() {
+    loop {
+        if isset(helmet) { helmet.On = true; }
+        yield;
+    }
+}
+```
+
+`isset(dev) -> bool` is true while the pin has a device on it, and never an
+error: an empty pin is the answer. It takes a device declared with `device`, a
+pin written straight into the call (`isset(d3)`), or `db`. A name standing for
+`all(...)` or `named(...)` is not a pin and is refused at compile time. This is
+IC10's `sdse`. See `samples/optional-devices.iz`.
+
 ## Devices beyond the six pins
 
 Six pins run out long before the devices do. The same `device` declaration also

@@ -1,0 +1,64 @@
+#iz
+// Optional devices: one program, whatever happens to be wired.
+//
+// Reading a pin with nothing on it stops the program, lights the housing error
+// LED and retries on the next tick. That is the right answer for a cable
+// somebody forgot to plug in, and the wrong one for a chip that is meant to
+// drive whatever is there: a suit that may or may not have a helmet, or a
+// housing where only three of the six pins are used.
+//
+// 'isset(dev)' asks the question first. It answers for a device declared on a
+// pin, for a pin written straight into the call, and for 'db' - the device the
+// chip is installed in. This is IC10's 'sdse'.
+//
+// Wiring: nothing is required. Wire what you have, leave the rest empty, and
+// the program keeps running either way.
+
+device sensor = d0;
+device vent   = d1;
+device light  = d2;
+device self   = db;
+
+const TARGET = 101.325;
+const MARGIN = 5.0;
+
+// How many of the six pins have something on them. A number worth showing on a
+// display, and the reason the pins are written as 'd0'..'d5' here: this loop is
+// about the pins themselves, not about a device with a name.
+fn wired_count() -> num {
+    var count = 0;
+
+    if isset(d0) { count += 1; }
+    if isset(d1) { count += 1; }
+    if isset(d2) { count += 1; }
+    if isset(d3) { count += 1; }
+    if isset(d4) { count += 1; }
+    if isset(d5) { count += 1; }
+
+    return count;
+}
+
+fn main() {
+    loop {
+        // With no sensor there is no reading to act on, so the pressure branch
+        // is skipped whole instead of guessing a value.
+        if isset(sensor) && isset(vent) {
+            var p = sensor.Pressure;
+            vent.On = p < TARGET - MARGIN;
+        }
+
+        // An optional indicator: nice when it is there, no error when it is not.
+        if isset(light) {
+            light.On = isset(sensor);
+        }
+
+        // The housing itself is optional too: a chip in a player's inventory has
+        // no holder at all, and asking is how the program survives being carried
+        // from the bench to the suit.
+        if isset(self) {
+            self.Setting = wired_count();
+        }
+
+        yield;
+    }
+}
