@@ -341,6 +341,7 @@ namespace IZLang.Lexing
                 case ',': return Single(TokenKind.Comma);
                 case ';': return Single(TokenKind.Semicolon);
                 case ':': return Single(TokenKind.Colon);
+                case '?': return Single(TokenKind.Question);
                 case '~': return Single(TokenKind.Tilde);
                 case '^': return Single(TokenKind.Caret);
 

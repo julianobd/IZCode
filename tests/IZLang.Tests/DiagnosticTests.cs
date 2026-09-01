@@ -364,6 +364,84 @@ namespace IZLang.Tests
         }
 
         // ------------------------------------------------------------------
+        //  The ternary operator
+        // ------------------------------------------------------------------
+
+        [Fact]
+        public void ATernaryConditionIsABoolAndNotANum()
+        {
+            var error = TestHost.CompileError(
+                "device out = d0;\n" +
+                "fn main() {\n" +
+                "    var x = 1;\n" +
+                "    out.Setting = x ? 10 : 20;\n" +
+                "}\n",
+                IZErrorCode.TypeMismatch);
+
+            Assert.Contains("x != 0", error.Message);
+        }
+
+        [Fact]
+        public void TheTwoSidesOfATernaryHaveTheSameType()
+        {
+            var error = TestHost.CompileError(
+                "device out = d0;\n" +
+                "fn main() {\n" +
+                "    var c = true;\n" +
+                "    out.Setting = len(c ? 1 : \"a\");\n" +
+                "}\n",
+                IZErrorCode.TypeMismatch);
+
+            // The message has to name both types, or the player has to guess which side is wrong.
+            Assert.Contains("num", error.Message);
+            Assert.Contains("str", error.Message);
+        }
+
+        [Fact]
+        public void ATernaryCannotChooseBetweenArrays()
+        {
+            var error = TestHost.CompileError(
+                "device out = d0;\n" +
+                "fn main() {\n" +
+                "    var a: num[2];\n" +
+                "    var b: num[2];\n" +
+                "    var c = true;\n" +
+                "    out.Setting = (c ? a : b)[0];\n" +
+                "}\n",
+                IZErrorCode.TypeMismatch);
+
+            Assert.Contains("array", error.Message);
+        }
+
+        [Fact]
+        public void ATernaryCannotChooseBetweenCallsThatReturnNothing()
+        {
+            var error = TestHost.CompileError(
+                "device out = d0;\n" +
+                "fn nothing() { }\n" +
+                "fn main() {\n" +
+                "    var c = true;\n" +
+                "    out.Setting = c ? nothing() : nothing();\n" +
+                "}\n",
+                IZErrorCode.TypeMismatch);
+
+            Assert.Contains("nothing", error.Message);
+        }
+
+        [Fact]
+        public void ATernaryWithoutItsColonIsOneError()
+        {
+            var result = IZCompiler.Compile(
+                "device out = d0;\n" +
+                "fn main() {\n" +
+                "    out.Setting = true ? 1;\n" +
+                "}\n");
+
+            Assert.False(result.Success);
+            Assert.Equal(1, result.Diagnostics.Count(d => d.IsError));
+        }
+
+        // ------------------------------------------------------------------
         //  Prefab hashing
         // ------------------------------------------------------------------
 

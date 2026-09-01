@@ -64,6 +64,7 @@ namespace IZLang.Tests
         [InlineData("const DISPLAY = #\"StructureConsoleLED5\"")]
         [InlineData("var mask = 0b1010 << 2 | 0xFF;")]
         [InlineData("for i in 0..=10 { total += i; }")]
+        [InlineData("var target = hot ? LOW : HIGH;")]
         public void TheVisibleTextDoesNotChange(string line)
         {
             // The colored TextMeshPro sits on top of the raw text field: if the
@@ -128,6 +129,16 @@ namespace IZLang.Tests
         {
             string markup = SyntaxHighlighter.HighlightLine("var x = clamp(a, 0, 1);");
             Assert.Contains("<color=#" + HighlightTheme.Default.Function + ">clamp</color>", markup);
+        }
+
+        [Fact]
+        public void TheTernaryOperatorIsPaintedAsAnOperator()
+        {
+            string markup = SyntaxHighlighter.HighlightLine("var t = hot ? LOW : HIGH;");
+
+            Assert.Contains("<color=#" + HighlightTheme.Default.Operator + ">?</color>", markup);
+            Assert.Contains("<color=#" + HighlightTheme.Default.Operator + ">:</color>", markup);
+            Assert.Equal("var t = hot ? LOW : HIGH;", Visible(markup));
         }
 
         [Fact]

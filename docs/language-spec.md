@@ -337,6 +337,7 @@ By precedence, from weakest to strongest:
 
 | Level | Operators | Associativity |
 |---|---|---|
+| 0 | `c ? a : b` | right (only the branch taken is evaluated) |
 | 1 | `\|\|` | left (short circuit) |
 | 2 | `&&` | left (short circuit) |
 | 3 | `==` `!=` | left |
@@ -352,6 +353,40 @@ By precedence, from weakest to strongest:
 
 Assignment (`=`, `+=`, `-=`, `*=`, `/=`, `%=`) is a **statement**, not an
 expression: `if (a = b)` does not compile.
+
+### 6.1 The ternary operator
+
+`c ? a : b` picks one of two values in one line, and it is an expression, so it
+goes anywhere a value goes:
+
+```iz
+var target = hot ? LOW : HIGH;
+pump.Setting = full ? 0 : 100;
+display.Setting = len(locked ? "shut" : "open");
+```
+
+The condition is a `bool`, as in `if`: a `num` does not become one on its own.
+The two sides have to be the same type, `num`, `bool` or `str`, except that a
+`bool` widens to a `num` the same way it does everywhere else. Neither side may
+be an array, a list or a struct: those live in the heap and the value on the
+stack is their address, so choosing one would hand back storage instead of a
+value.
+
+Only the branch taken is evaluated, like `&&` and `||`, so a call on the other
+side never happens:
+
+```iz
+var v = ready ? sensor.Pressure : 0;    // the sensor is not read when not ready
+```
+
+It binds weaker than every other operator, and it is the only right associative
+level, so a chain reads as nested without parentheses:
+
+```iz
+var band = x == 1 ? 10 : x == 2 ? 20 : 30;    // x == 1 ? 10 : (x == 2 ? 20 : 30)
+```
+
+This is IC10's `select`.
 
 ---
 

@@ -74,6 +74,30 @@ That is **one loop** over the cells, with the lambdas inlined into it: nothing i
 allocated between one method and the next, and there is no call per element. See
 [Lists](#lists), [Queries](#queries) and `samples/queries.iz`.
 
+## Choosing between two values
+
+`c ? a : b` is IC10's `select`, and it is an expression, so it goes anywhere a
+value goes:
+
+```iz
+var target = hot ? LOW : HIGH;
+pump.Setting = full ? 0 : 100;
+display.Setting = len(locked ? "shut" : "open");
+```
+
+The condition is a `bool`, as in `if`. The two sides have to be the same type -
+`num`, `bool` or `str`, never an array, a list or a struct - and only the branch
+taken is evaluated, so a device read on the other side never happens. It binds
+weaker than every other operator and it is right associative, so a chain of
+bands reads as nested without parentheses:
+
+```iz
+var band = p < LOW ? 1 : p > HIGH ? 3 : 2;
+```
+
+See section 6.1 of [docs/language-spec.md](docs/language-spec.md) and
+`samples/ternary.iz`.
+
 ## The game's named values
 
 Stationeers names its logic values, and IC10 writes them behind a group:

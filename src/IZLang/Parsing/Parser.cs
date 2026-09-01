@@ -562,7 +562,36 @@ namespace IZLang.Parsing
 
         private const int UnaryPrecedence = 11;
 
-        public ExpressionSyntax ParseExpression() => ParseBinary(0);
+        public ExpressionSyntax ParseExpression() => ParseConditional();
+
+        /// <summary>
+        /// 'cond ? a : b', the weakest level of all and the only right associative
+        /// one, so 'a ? b : c ? d : e' reads as 'a ? b : (c ? d : e)'.
+        /// </summary>
+        private ExpressionSyntax ParseConditional()
+        {
+            var condition = ParseBinary(0);
+            if (!Check(TokenKind.Question)) return condition;
+
+            var question = Advance();
+            var whenTrue = ParseConditional();
+
+            if (!Check(TokenKind.Colon))
+            {
+                _diagnostics.Report(IZErrorCode.ExpectedToken, Current.Span,
+                    "expected ':', found " + Describe(Current) +
+                    "; '?' picks between two values, as in 'hot ? LOW : HIGH'");
+
+                // The side that is missing stands in as the one that was written, so
+                // the type check has nothing extra to complain about on top of this.
+                return new ConditionalExpression(condition, question, whenTrue, whenTrue);
+            }
+
+            Advance();
+            var whenFalse = ParseConditional();
+
+            return new ConditionalExpression(condition, question, whenTrue, whenFalse);
+        }
 
         private ExpressionSyntax ParseBinary(int parentPrecedence)
         {

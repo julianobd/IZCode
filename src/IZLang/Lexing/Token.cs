@@ -74,6 +74,7 @@ namespace IZLang.Lexing
                 case TokenKind.Comma: return "','";
                 case TokenKind.Semicolon: return "';'";
                 case TokenKind.Colon: return "':'";
+                case TokenKind.Question: return "'?'";
                 case TokenKind.Dot: return "'.'";
                 case TokenKind.DotDot: return "'..'";
                 case TokenKind.DotDotEquals: return "'..='";

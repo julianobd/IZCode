@@ -1622,6 +1622,7 @@ namespace IZLang.Binding
                 case NameExpression name: return EmitName(name);
                 case UnaryExpression unary: return EmitUnary(unary);
                 case BinaryExpression binary: return EmitBinary(binary);
+                case ConditionalExpression conditional: return EmitConditional(conditional);
                 case CallExpression call: return EmitCall(call);
                 case MemberExpression member: return EmitMemberRead(member);
                 case IndexExpression index: return EmitIndexRead(index);
@@ -1748,6 +1749,63 @@ namespace IZLang.Binding
                 default:
                     return IZType.Error;
             }
+        }
+
+        /// <summary>
+        /// 'cond ? a : b'. The same jumps the 'if' statement emits, except that both
+        /// branches leave one value behind, so only the branch taken is evaluated.
+        /// </summary>
+        private IZType EmitConditional(ConditionalExpression conditional)
+        {
+            int line = LineOf(conditional.Span);
+
+            var conditionType = EmitExpression(conditional.Condition);
+            RequireBool(conditionType, conditional.Condition.Span, "the condition of '?'");
+
+            int jumpToElse = EmitJump(OpCode.JumpIfFalse, line);
+            var trueType = EmitExpression(conditional.WhenTrue);
+            int jumpOverElse = EmitJump(OpCode.Jump, line);
+
+            PatchJump(jumpToElse);
+            var falseType = EmitExpression(conditional.WhenFalse);
+            PatchJump(jumpOverElse);
+
+            return ConditionalResultType(conditional, trueType, falseType);
+        }
+
+        private IZType ConditionalResultType(ConditionalExpression conditional,
+                                             IZType trueType, IZType falseType)
+        {
+            if (trueType == IZType.Error || falseType == IZType.Error) return IZType.Error;
+
+            if (trueType == IZType.Void || falseType == IZType.Void)
+            {
+                _diagnostics.Report(IZErrorCode.TypeMismatch, conditional.Span,
+                    "'?' has to choose between two values, and a call that returns " +
+                    "nothing is not one");
+                return IZType.Error;
+            }
+
+            // An aggregate lives on the stack as the address of its cells, so choosing
+            // one would hand back storage, not a value.
+            if (trueType.IsAggregate || falseType.IsAggregate)
+            {
+                _diagnostics.Report(IZErrorCode.TypeMismatch, conditional.Span,
+                    "'?' cannot choose between an array, a list or a struct; choose " +
+                    "between the values inside them instead");
+                return IZType.Error;
+            }
+
+            if (trueType == falseType) return trueType;
+
+            // bool widens to num everywhere else in the language, so it widens here too.
+            if (trueType.IsAssignableTo(falseType)) return falseType;
+            if (falseType.IsAssignableTo(trueType)) return trueType;
+
+            _diagnostics.Report(IZErrorCode.TypeMismatch, conditional.Span,
+                "the two sides of '?' have to be the same type, but one gives " +
+                trueType.Display() + " and the other " + falseType.Display());
+            return IZType.Error;
         }
 
         private IZType EmitBinary(BinaryExpression binary)

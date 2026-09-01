@@ -145,6 +145,18 @@ namespace IZLang.Tests
                 "var s = \"a\";\nfn main() { s -= \"b\"; }\n",
                 IZErrorCode.TypeMismatch);
 
+        [Fact]
+        public void TheTernaryChoosesBetweenTwoStrings()
+        {
+            Assert.Equal("open", Text("locked ? \"shut\" : \"open\"", "var locked = false;\n"));
+            Assert.Equal("shut", Text("locked ? \"shut\" : \"open\"", "var locked = true;\n"));
+        }
+
+        [Fact]
+        public void AStringChosenByATernaryStillJoins() =>
+            Assert.Equal("vent-north", Text("\"vent-\" + (north ? \"north\" : \"south\")",
+                                            "var north = true;\n"));
+
         // ------------------------------------------------------------------
         //  The text library
         // ------------------------------------------------------------------

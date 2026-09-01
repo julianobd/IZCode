@@ -360,6 +360,109 @@ namespace IZLang.Tests
         }
 
         // ------------------------------------------------------------------
+        //  The ternary operator
+        // ------------------------------------------------------------------
+
+        [Theory]
+        [InlineData("true ? 1 : 2", 1.0)]
+        [InlineData("false ? 1 : 2", 2.0)]
+        [InlineData("5 > 3 ? 10 : 20", 10.0)]
+        [InlineData("5 < 3 ? 10 : 20", 20.0)]
+        public void TheTernaryPicksTheSideTheConditionAsksFor(string expression, double expected) =>
+            Assert.Equal(expected, TestHost.Eval(expression), 10);
+
+        [Fact]
+        public void TheTernaryBindsWeakerThanEveryOtherOperator()
+        {
+            // 1 + 1 == 2 ? 3 + 4 : 5 + 6  reads as  ((1+1) == 2) ? (3+4) : (5+6)
+            Assert.Equal(7.0, TestHost.Eval("1 + 1 == 2 ? 3 + 4 : 5 + 6"), 10);
+            Assert.Equal(11.0, TestHost.Eval("1 + 1 == 3 ? 3 + 4 : 5 + 6"), 10);
+        }
+
+        [Theory]
+        [InlineData(1.0, 10.0)]
+        [InlineData(2.0, 20.0)]
+        [InlineData(3.0, 30.0)]
+        public void TheTernaryIsRightAssociative(double input, double expected)
+        {
+            // Without parentheses this is  x == 1 ? 10 : (x == 2 ? 20 : 30).
+            Assert.Equal(expected,
+                TestHost.Eval("x == 1 ? 10 : x == 2 ? 20 : 30", "var x = " + input + ";"), 10);
+        }
+
+        [Fact]
+        public void TheTernaryOnlyEvaluatesTheBranchItTakes()
+        {
+            // If the branch not taken ran, d1 would be written to.
+            var host = TestHost.Execute(
+                "device flag = d1;\n" +
+                "device out = d0;\n" +
+                "fn mark() -> num { flag.Setting = 1; return 99; }\n" +
+                "fn main() {\n" +
+                "    out.Setting = true ? 7 : mark();\n" +
+                "}\n",
+                h => { h.Connect(0); h.Connect(1); });
+
+            Assert.DoesNotContain(host.Writes, w => w.Pin == 1);
+            Assert.Equal(7.0, host.Writes.Last().Value);
+        }
+
+        [Fact]
+        public void TheTernaryOnlyEvaluatesTheBranchItTakesOnTheElseSide()
+        {
+            var host = TestHost.Execute(
+                "device flag = d1;\n" +
+                "device out = d0;\n" +
+                "fn mark() -> num { flag.Setting = 1; return 99; }\n" +
+                "fn main() {\n" +
+                "    out.Setting = false ? mark() : 7;\n" +
+                "}\n",
+                h => { h.Connect(0); h.Connect(1); });
+
+            Assert.DoesNotContain(host.Writes, w => w.Pin == 1);
+            Assert.Equal(7.0, host.Writes.Last().Value);
+        }
+
+        [Fact]
+        public void TheTernaryIsAnExpressionAndComposes()
+        {
+            Assert.Equal(25.0, TestHost.Eval("(hot ? 10 : 20) + 15", "var hot = true;"), 10);
+            Assert.Equal(6.0, TestHost.Eval("abs(hot ? -6 : 3)", "var hot = true;"), 10);
+        }
+
+        [Fact]
+        public void TheTernaryGivesBackABool()
+        {
+            var host = TestHost.Execute(
+                "device out = d0;\n" +
+                "fn main() {\n" +
+                "    var open = true;\n" +
+                "    out.On = open ? false : true;\n" +
+                "}\n",
+                h => h.Connect(0));
+
+            Assert.Equal(0.0, host.Writes.Last().Value);
+        }
+
+        [Fact]
+        public void TheTernaryMixingBoolAndNumWidensToNum() =>
+            Assert.Equal(1.0, TestHost.Eval("hot ? true : 5", "var hot = true;"), 10);
+
+        [Fact]
+        public void ATernaryWritesToADeviceProperty()
+        {
+            var host = TestHost.Execute(
+                "device pump = d0;\n" +
+                "fn main() {\n" +
+                "    var full = true;\n" +
+                "    pump.Setting = full ? 0 : 100;\n" +
+                "}\n",
+                h => h.Connect(0));
+
+            Assert.Equal(0.0, host.Writes.Last().Value);
+        }
+
+        // ------------------------------------------------------------------
         //  Functions
         // ------------------------------------------------------------------
 

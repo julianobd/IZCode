@@ -217,7 +217,7 @@ A call-depth limit turns runaway recursion into a clean error.
 
 [h3]Operators and Math[/h3]
 
-Operators follow C precedence. Prefix: [b]-x[/b], [b]!x[/b] and [b]~x[/b].
+Operators follow C precedence. Prefix: [b]-x[/b], [b]!x[/b] and [b]~x[/b]. [b]c ? a : b[/b] picks one of two values, IC10's select.
 
 Division by zero follows IEEE-754. Assignment is a statement, so [b]if (a = b)[/b] does not compile.
 
@@ -282,7 +282,7 @@ Enable IZCode in the mods menu; [b][IZCode][/b] in [b]Player.log[/b] confirms it
 
 [b]#iz[/b] is a valid IC10 comment, so an IZ chip does not break for players without IZCode.
 
-Example programs are in [b]samples/[/b]: pressure, solar tracking, queries and a hardsuit controller.
+Example programs are in [b]samples/[/b]: pressure, solar, queries, ternary and a hardsuit controller.
 
 [h2]MULTIPLAYER[/h2]
 
@@ -299,11 +299,23 @@ Every client and the server need the mod installed.
 [url=https://github.com/julianobd/IZCode/issues]Issue Tracker[/url]
 
 [hr]
-
-[i]IZCode - Structured programming for Stationeers.[/i]
 </Description>
   <ChangeLog>
 ===== 0.1.6 =========================================================
+
+- Added the ternary operator, 'c ? a : b', which picks one of two values in one
+  line. This is IC10's 'select', and the only instruction that had no shape at
+  all in IZ: the same choice used to cost a var, an if, an else, and a name that
+  only had to be mutable so both branches could reach it. It is an expression,
+  so it goes anywhere a value goes, including into a device property and into
+  the argument of a call. The condition is a bool, as in 'if'; the two sides
+  have to be the same type, num, bool or str, and never an array, a list or a
+  struct, since those are addresses into the heap; and only the branch taken is
+  evaluated, so a device read on the side not chosen never happens. It binds
+  weaker than every other operator and it is right associative, so a chain like
+  'p &lt; LOW ? 1 : p &gt; HIGH ? 3 : 2' reads as nested without parentheses. Writing
+  '?' without its ':' draws one error that names the shape, not a cascade. See
+  'samples/ternary.iz'.
 
 - Added 'isset(dev)', which answers whether a pin has a device on it right now.
   A program can drive whatever is wired instead of stopping on an empty pin: the

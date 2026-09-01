@@ -83,6 +83,25 @@ namespace IZLang.Parsing
         }
     }
 
+    /// <summary>cond ? whenTrue : whenFalse - only the branch taken is evaluated.</summary>
+    public sealed class ConditionalExpression : ExpressionSyntax
+    {
+        public ExpressionSyntax Condition { get; }
+        public Token QuestionToken { get; }
+        public ExpressionSyntax WhenTrue { get; }
+        public ExpressionSyntax WhenFalse { get; }
+
+        public ConditionalExpression(ExpressionSyntax condition, Token question,
+                                     ExpressionSyntax whenTrue, ExpressionSyntax whenFalse)
+        {
+            Condition = condition;
+            QuestionToken = question;
+            WhenTrue = whenTrue;
+            WhenFalse = whenFalse;
+            Span = condition.Span.To(whenFalse.Span);
+        }
+    }
+
     public sealed class CallExpression : ExpressionSyntax
     {
         public ExpressionSyntax Callee { get; }

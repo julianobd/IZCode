@@ -181,6 +181,15 @@ namespace IZLang.Tests
         }
 
         [Fact]
+        public void TheTernaryOperatorLexesAsTwoPunctuationTokens()
+        {
+            var tokens = LexOk("hot ? 1 : 2");
+
+            Assert.Equal(TokenKind.Question, tokens[1].Kind);
+            Assert.Equal(TokenKind.Colon, tokens[3].Kind);
+        }
+
+        [Fact]
         public void LessThanFollowedByMinusIsNotAShift()
         {
             var tokens = LexOk("a < -b");

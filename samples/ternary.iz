@@ -1,0 +1,55 @@
+#iz
+// The ternary operator: 'c ? a : b' chooses one of two values in one line.
+//
+// This is IC10's 'select'. What it replaces is the four lines the same choice
+// used to cost: a var, an if, an else, and a name that only had to be mutable
+// so that both branches could reach it.
+//
+// Wiring: d0 gas sensor, d1 heater, d2 wall light, d3 console display.
+
+device sensor  = d0;
+device heater  = d1;
+device light   = d2;
+device display = d3;
+
+const DAY_TEMPERATURE   = 293.15;    // K, about 20 C
+const NIGHT_TEMPERATURE = 285.15;    // K, about 12 C
+
+const BRIGHT = 100.0;
+const DIM    = 15.0;
+
+const LOW_PRESSURE  = 90.0;          // kPa
+const HIGH_PRESSURE = 110.0;
+
+fn main() {
+    light.On = true;
+
+    loop {
+        var occupied = sensor.Activate != 0;
+        var pressure = sensor.Pressure;
+
+        // The plain shape: one value or the other, decided by a bool. The
+        // condition is a bool and never a num, exactly as in 'if'.
+        heater.Setting = occupied ? DAY_TEMPERATURE : NIGHT_TEMPERATURE;
+        light.Setting  = occupied ? BRIGHT : DIM;
+
+        // It is an expression, so it goes anywhere a value goes. It binds
+        // weaker than every other operator, which is why '+' needs the
+        // parentheses here to keep the choice together.
+        display.Setting = (occupied ? 1000 : 0) + pressure;
+
+        // Right associative, so a chain of bands needs no parentheses:
+        // this reads as  low ? 1 : (high ? 3 : 2).
+        var band = pressure < LOW_PRESSURE  ? 1
+                 : pressure > HIGH_PRESSURE ? 3
+                 : 2;
+
+        light.Color = band == 2 ? Color.Green : Color.Red;
+
+        // Only the side that is chosen is evaluated, like '&&' and '||': the
+        // temperature is never read while the room is empty.
+        heater.On = occupied ? sensor.Temperature < DAY_TEMPERATURE : false;
+
+        yield;
+    }
+}

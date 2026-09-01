@@ -26,6 +26,7 @@ namespace IZLang.Lexing
         LBrace, RBrace,
         LBracket, RBracket,
         Comma, Semicolon, Colon, Dot,
+        Question,                          // the '?' of the ternary operator
         DotDot, DotDotEquals,              // 0..10 and 0..=10
         Arrow,                             // ->
         FatArrow,                          // =>, the body of a query lambda
