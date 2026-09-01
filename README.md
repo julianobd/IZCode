@@ -187,6 +187,21 @@ of repeating the prefab and the label everywhere. The two hashes are folded when
 the name is declared, so `led.On = true` compiles to exactly what the inline
 `named(...)` form compiles to - naming the group costs nothing.
 
+A batch property is the sequence of readings of every device the selector
+matched, and used bare it means `.avg()`. Four other terminals collapse it, and
+none of them costs a second read:
+
+```iz
+var total  = all(StructureSolarPanel).PowerGeneration.sum();
+var worst  = all(StructureGasSensor).Pressure.max();
+var lowest = lights.Setting.min();
+var panels = all(StructureSolarPanel).PowerGeneration.count();
+```
+
+An empty batch gives `0` for all of them - `min()` included, which is `0` and
+not infinity. `count()` is the one that still answers, so it is what separates
+"nothing on the network" from "everything reading zero". See `samples/solar.iz`.
+
 What a selector saves is pins, not cabling. It reaches the devices on the same
 data network as the housing, exactly as a pin does, so the data cable still has
 to get there; what it drops is having to register each device in one of the six

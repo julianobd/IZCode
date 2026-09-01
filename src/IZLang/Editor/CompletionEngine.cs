@@ -87,6 +87,8 @@ namespace IZLang.Editor
         StructField,
         /// <summary>After a list, an array or a query and a '.': the query methods.</summary>
         ListMethod,
+        /// <summary>After a batch property and a '.': avg, sum, min, max, count.</summary>
+        BatchTerminal,
         /// <summary>After the name of one of the game's constant groups and a '.': its values.</summary>
         ConstantValue,
     }
@@ -151,6 +153,20 @@ namespace IZLang.Editor
             { "reverse", "back to front" },
             { "distinct", "drops repeats" },
             { "into", "writes the result into a list that already exists" },
+        };
+
+        /// <summary>
+        /// What can follow a batch property and a dot. A batch property is the
+        /// sequence of readings of every device the selector matched, and these five
+        /// are the only ways the game knows of collapsing it.
+        /// </summary>
+        private static readonly string[,] BatchTerminals =
+        {
+            { "avg", "their average, what the bare property already gives" },
+            { "sum", "adds every reading up" },
+            { "min", "the smallest reading, 0 when nothing matched" },
+            { "max", "the biggest reading, 0 when nothing matched" },
+            { "count", "how many devices answered" },
         };
 
         /// <summary>Only a list has these: an array is always full.</summary>
@@ -236,6 +252,10 @@ namespace IZLang.Editor
                     AddQueryMethods(items, prefixSpan, wholeList);
                     break;
 
+                case CompletionContext.BatchTerminal:
+                    AddBatchTerminals(items, prefixSpan);
+                    break;
+
                 case CompletionContext.ConstantValue:
                     AddConstantValues(items, prefixSpan, constantGroup);
                     break;
@@ -294,6 +314,12 @@ namespace IZLang.Editor
                 // separates the two: only the list itself can be added to or emptied.
                 if (IsQuerySubject(tokens, index - 1, declarations, out wholeList))
                     return CompletionContext.ListMethod;
+
+                // 'all(X).Power.' and 'lights.Power.' -> the aggregation terminals.
+                // The property list after 'all(X).' is untouched: only a second dot,
+                // with a property between the two, gets here.
+                if (IsBatchPropertyChain(tokens, index - 1, declarations))
+                    return CompletionContext.BatchTerminal;
 
                 // x.slot[i].  ->  the token before the '.' is ']'
                 if (index >= 1 && tokens[index - 1].Kind == TokenKind.RBracket)
@@ -495,6 +521,36 @@ namespace IZLang.Editor
             return false;
         }
 
+        /// <summary>
+        /// Is <paramref name="propertyIndex"/> the property of a batch read - the
+        /// 'Power' of 'all(X).Power.' or of 'lights.Power.'?
+        /// </summary>
+        private static bool IsBatchPropertyChain(List<Token> tokens, int propertyIndex,
+                                                 List<DeclaredSymbol> declarations)
+        {
+            if (propertyIndex < 2) return false;
+            if (tokens[propertyIndex].Kind != TokenKind.Identifier) return false;
+            if (tokens[propertyIndex - 1].Kind != TokenKind.Dot) return false;
+
+            int subject = propertyIndex - 2;
+
+            // 'all(X).Power.' - the selector written where it is used.
+            if (tokens[subject].Kind == TokenKind.RParen)
+            {
+                int open = MatchingOpenParen(tokens, subject);
+                return open >= 1 && (tokens[open - 1].Kind == TokenKind.KwAll ||
+                                     tokens[open - 1].Kind == TokenKind.KwNamed);
+            }
+
+            // 'lights.Power.' - a name declared from a selector. A device on a pin
+            // hands over one value, so it has nothing to collapse.
+            if (tokens[subject].Kind != TokenKind.Identifier) return false;
+
+            var symbol = DeclarationScanner.Find(declarations, tokens[subject].Text);
+            return symbol != null && symbol.Kind == DeclaredKind.Device &&
+                   symbol.BatchSelector != null;
+        }
+
         /// <summary>From a ')', the index of its matching '('.</summary>
         private static int MatchingOpenParen(List<Token> tokens, int closeIndex)
         {
@@ -691,10 +747,11 @@ namespace IZLang.Editor
 
         /// <summary>Current reading of a property, from the pin or from the selector.</summary>
         internal static double? ReadValue(IEditorEnvironment environment, int pin,
-                                          DeviceSelector selector, int logicType)
+                                          DeviceSelector selector, int logicType,
+                                          BatchAggregation aggregation = BatchAggregation.Average)
         {
             if (pin >= 0) return environment.GetLiveValue(pin, logicType);
-            return selector.IsEmpty ? null : environment.GetSelectorValue(selector, logicType);
+            return selector.IsEmpty ? null : environment.GetSelectorValue(selector, logicType, aggregation);
         }
 
         private static void AddPrefabs(List<CompletionItem> items, SourceSpan span,
@@ -715,6 +772,13 @@ namespace IZLang.Editor
                 string detail = field.TypeName + (field.ArrayDepth > 0 ? "[]" : string.Empty);
                 items.Add(new CompletionItem(field.Name, CompletionKind.Property, detail, span));
             }
+        }
+
+        private static void AddBatchTerminals(List<CompletionItem> items, SourceSpan span)
+        {
+            for (int i = 0; i < BatchTerminals.GetLength(0); i++)
+                items.Add(new CompletionItem(BatchTerminals[i, 0], CompletionKind.Method,
+                    BatchTerminals[i, 1], span, i));
         }
 
         /// <summary>

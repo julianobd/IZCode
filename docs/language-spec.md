@@ -148,12 +148,42 @@ named("Corridor Light").On = false;            // any prefab, by label
 named(StructureVolumePump, "north").On = true; // prefab AND label
 ```
 
-A batch read aggregates by **average**. If no device matches the filter, the
-result is `0`.
+#### The reading of a batch
+
+A batch property is the **sequence of readings of every device the selector
+matched**, and used bare it means `.avg()`:
 
 ```iz
 var average = all(StructureGasSensor).Pressure;
 ```
+
+Five terminals collapse that sequence, the same way the query terminals collapse
+a list. They are written after the property, take no argument, and end the chain:
+
+| | |
+|---|---|
+| `avg()` | the average; what the bare property already gives |
+| `sum()` | every reading added up |
+| `min()` `max()` | the smallest and the biggest reading |
+| `count()` | how many devices answered |
+
+```iz
+var total = all(StructureSolarPanel).PowerGeneration.sum();
+var worst = all(StructureGasSensor).Pressure.max();
+var panels = all(StructureSolarPanel).PowerGeneration.count();
+```
+
+The terminal only picks which of the game's five batch methods travels in the
+instruction, so the whole chain costs the single read the bare property costs.
+
+If no device matches the filter, the result is `0` - including `min()`, which
+gives `0` rather than infinity. `count()` is the one terminal for which an empty
+batch is a real answer rather than a failed read, which is what makes it able to
+tell "nothing on the network" from "everything reading zero".
+
+A terminal only exists on a batch. A device on a pin hands over one reading, so
+`pump.Pressure.sum()` is refused, and so is any other method: a batch read is
+done by the game, and it knows no `where` or `first`.
 
 #### How the prefab is written
 
@@ -219,6 +249,7 @@ From there the name is used exactly like a device on a pin:
 ```iz
 led.On = true;                    // reaches every matching device
 var p = lights.Setting;           // averaged over all of them, as a batch read is
+var top = lights.Setting.max();   // and the terminals work here too
 ```
 
 This is what a base with forty lights needs. The six pins run out long before
@@ -787,7 +818,7 @@ The groups are read out of the game's own assembly, so they follow the game:
 |---|---|
 | `LogicType` | every device property: `Pressure`, `Setting`, `On`... |
 | `LogicSlotType` | every slot property: `Occupied`, `Quantity`, `Charge`... |
-| `LogicBatchMethod` | `Average`, `Sum`, `Minimum`, `Maximum` |
+| `LogicBatchMethod` | `Average`, `Sum`, `Minimum`, `Maximum`, `Count` |
 | `LogicReagentMode` | `Contents`, `Required`, `Recipe`, `TotalContents` |
 | `Color` | the twelve paintable colors |
 | `GasType` | `Oxygen`, `Nitrogen`, `Volatiles`, the liquids... |

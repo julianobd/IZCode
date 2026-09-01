@@ -297,6 +297,13 @@ namespace IZLang.Editor
             var token = tokens[index];
             string name = token.Text;
 
+            // 'lights.Power.sum()' with the caret on 'sum'.
+            if (BatchTerminals.TryGetValue(name, out var terminal) &&
+                IsBatchProperty(tokens, index - 2, declarations))
+            {
+                return DescribeBatchTerminal(tokens, index, name, terminal, declarations, environment);
+            }
+
             // 'Color.Black' - one of the game's named values, not a device property.
             if (index >= 2 && tokens[index - 2].Kind == TokenKind.Identifier &&
                 DeclarationScanner.Find(declarations, tokens[index - 2].Text) == null)
@@ -347,6 +354,11 @@ namespace IZLang.Editor
                 }
             }
 
+            // 'lights.Power.max()' - the value shown is the one the program asks for,
+            // not the average the bare property would give. A pin has a single reading,
+            // so there is nothing to collapse there.
+            var aggregation = pin >= 0 ? BatchAggregation.Average : ModeAfter(tokens, index);
+
             var device = CompletionEngine.ResolveDevice(environment, pin, selector);
             if (device != null)
             {
@@ -359,12 +371,143 @@ namespace IZLang.Editor
                 {
                     lines.Add(device.DisplayName + " - " + AccessText(property.Access));
 
-                    double? value = CompletionEngine.ReadValue(environment, pin, selector, logicType);
-                    if (value.HasValue) lines.Add("current value: " + CompletionEngine.FormatValue(value.Value));
+                    double? value = CompletionEngine.ReadValue(environment, pin, selector, logicType,
+                                                               aggregation);
+                    if (value.HasValue)
+                        lines.Add(ValueLabel(pin, aggregation) + CompletionEngine.FormatValue(value.Value));
                 }
             }
 
             return new HoverInfo(HoverKind.DeviceProperty, name, lines, token.Span);
+        }
+
+        /// <summary>The five terminals a batch read understands, and what each asks for.</summary>
+        private static readonly Dictionary<string, BatchAggregation> BatchTerminals =
+            new Dictionary<string, BatchAggregation>(StringComparer.Ordinal)
+            {
+                ["avg"] = BatchAggregation.Average,
+                ["sum"] = BatchAggregation.Sum,
+                ["min"] = BatchAggregation.Minimum,
+                ["max"] = BatchAggregation.Maximum,
+                ["count"] = BatchAggregation.Count,
+            };
+
+        private static readonly Dictionary<BatchAggregation, string> BatchTerminalText =
+            new Dictionary<BatchAggregation, string>
+            {
+                [BatchAggregation.Average] = "the average of every reading - what the bare property gives",
+                [BatchAggregation.Sum] = "every reading added up",
+                [BatchAggregation.Minimum] = "the smallest reading; 0 when nothing matched, not infinity",
+                [BatchAggregation.Maximum] = "the biggest reading; 0 when nothing matched",
+                [BatchAggregation.Count] = "how many devices answered",
+            };
+
+        /// <summary>
+        /// The mode written right after a batch property - the 'max' of
+        /// 'lights.Power.max()'. Average when there is none, which is what the bare
+        /// property already means.
+        /// </summary>
+        private static BatchAggregation ModeAfter(List<Token> tokens, int propertyIndex)
+        {
+            if (propertyIndex + 3 >= tokens.Count) return BatchAggregation.Average;
+            if (tokens[propertyIndex + 1].Kind != TokenKind.Dot) return BatchAggregation.Average;
+            if (tokens[propertyIndex + 3].Kind != TokenKind.LParen) return BatchAggregation.Average;
+
+            return BatchTerminals.TryGetValue(tokens[propertyIndex + 2].Text, out var mode)
+                ? mode
+                : BatchAggregation.Average;
+        }
+
+        private static string ValueLabel(int pin, BatchAggregation aggregation)
+        {
+            if (pin >= 0) return "current value: ";
+
+            switch (aggregation)
+            {
+                case BatchAggregation.Sum: return "sum over the batch: ";
+                case BatchAggregation.Minimum: return "smallest in the batch: ";
+                case BatchAggregation.Maximum: return "biggest in the batch: ";
+                case BatchAggregation.Count: return "devices answering: ";
+                default: return "average over the batch: ";
+            }
+        }
+
+        /// <summary>
+        /// The caret is on the terminal of 'lights.Power.sum()'. It is not a property
+        /// of anything: it says which of the five modes the game collapses the batch
+        /// with, and it is the whole of the chain rather than a second read.
+        /// </summary>
+        private static HoverInfo DescribeBatchTerminal(List<Token> tokens, int index, string name,
+                                                       BatchAggregation aggregation,
+                                                       List<DeclaredSymbol> declarations,
+                                                       IEditorEnvironment environment)
+        {
+            var lines = new List<string>
+            {
+                BatchTerminalText[aggregation],
+                "one batch read; it costs what the bare property costs",
+            };
+
+            int propertyIndex = index - 2;
+            var selector = BatchSubjectOf(tokens, propertyIndex, declarations);
+
+            if (!selector.IsEmpty &&
+                GameEnums.LogicTypeByName.TryGetValue(tokens[propertyIndex].Text, out int logicType))
+            {
+                double? value = CompletionEngine.ReadValue(environment, -1, selector, logicType,
+                                                           aggregation);
+                if (value.HasValue)
+                    lines.Add(ValueLabel(-1, aggregation) + CompletionEngine.FormatValue(value.Value));
+            }
+
+            return new HoverInfo(HoverKind.Builtin, name + "()", lines, tokens[index].Span);
+        }
+
+        /// <summary>
+        /// The selector behind 'lights.Power', when 'lights' was declared from one.
+        /// Empty when the property is not a batch read.
+        /// </summary>
+        private static DeviceSelector BatchSubjectOf(List<Token> tokens, int propertyIndex,
+                                                     List<DeclaredSymbol> declarations)
+        {
+            if (propertyIndex < 2) return default;
+            if (tokens[propertyIndex].Kind != TokenKind.Identifier) return default;
+            if (tokens[propertyIndex - 1].Kind != TokenKind.Dot) return default;
+            if (tokens[propertyIndex - 2].Kind != TokenKind.Identifier) return default;
+
+            var symbol = DeclarationScanner.Find(declarations, tokens[propertyIndex - 2].Text);
+            return symbol != null && symbol.Kind == DeclaredKind.Device && symbol.BatchSelector != null
+                ? symbol.Selector
+                : default;
+        }
+
+        /// <summary>
+        /// Is the identifier at <paramref name="propertyIndex"/> the property of a
+        /// batch read - the 'Power' of 'all(X).Power' or of 'lights.Power'?
+        /// </summary>
+        private static bool IsBatchProperty(List<Token> tokens, int propertyIndex,
+                                            List<DeclaredSymbol> declarations)
+        {
+            if (propertyIndex < 2) return false;
+            if (tokens[propertyIndex].Kind != TokenKind.Identifier) return false;
+            if (tokens[propertyIndex - 1].Kind != TokenKind.Dot) return false;
+
+            int subject = propertyIndex - 2;
+
+            if (tokens[subject].Kind == TokenKind.RParen)
+            {
+                int depth = 0;
+                for (int i = subject; i >= 1; i--)
+                {
+                    if (tokens[i].Kind == TokenKind.RParen) depth++;
+                    else if (tokens[i].Kind == TokenKind.LParen && --depth == 0)
+                        return tokens[i - 1].Kind == TokenKind.KwAll ||
+                               tokens[i - 1].Kind == TokenKind.KwNamed;
+                }
+                return false;
+            }
+
+            return !BatchSubjectOf(tokens, propertyIndex, declarations).IsEmpty;
         }
 
         private static string AccessText(LogicAccess access)

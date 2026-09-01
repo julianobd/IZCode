@@ -150,19 +150,22 @@ light.Color = Color.Green;
 cooler.Mode = AirCon.Cold;
 [/code]
 
-All 30 groups come from the game itself: Color, GasType, SlotClass, Sound, AirCon, Vent, PowerMode, RobotMode, EntityState, LogicType and the rest. Each value folds to its number at compile time, and a typo is a compile error with the nearest name.
+All 30 groups come from the game itself: Color, GasType, SlotClass, Sound, AirCon, PowerMode, EntityState, LogicType and the rest. Each value folds to its number at compile time, and a typo is a compile error with the nearest name.
 
 [h3]Batch Operations[/h3]
 
-Operate on every matching device on the data network:
+Every matching device on the network:
 
 [code]
 all(StructureWallLight).On = true;
 named("Corridor Light").On = false;
 named(StructureVolumePump, "north").On = true;
 
-var avg = all(StructureGasSensor).Pressure;
+var avg   = all(StructureGasSensor).Pressure;
+var total = all(StructureSolarPanel).PowerGeneration.sum();
 [/code]
+
+A bare read averages; [b]sum()[/b], [b]min()[/b], [b]max()[/b] and [b]count()[/b] collapse it another way.
 
 A selector can be named and then used like a device on a pin:
 
@@ -171,7 +174,7 @@ device led = named(StructureDiode, #"led-dev");
 led.On = true;
 [/code]
 
-Prefab names, [b]#"hash"[/b] literals and constants are compile-time values with zero runtime cost.
+Prefab names, [b]#"hash"[/b] literals and constants cost nothing at runtime.
 
 [h3]Text[/h3]
 
@@ -218,7 +221,7 @@ Operators follow C precedence. Prefix: [b]-x[/b], [b]!x[/b] and [b]~x[/b].
 
 Division by zero follows IEEE-754. Assignment is a statement, so [b]if (a = b)[/b] does not compile.
 
-Math and trigonometry are there too, plus [b]len[/b], [b]hash[/b], [b]rand[/b], [b]nan[/b] and [b]inf[/b].
+Math and trigonometry are there too, plus [b]rand[/b], [b]nan[/b] and [b]inf[/b].
 
 [h3]Tick Control[/h3]
 
@@ -232,7 +235,7 @@ Without either, the VM preempts when the budget ends.
 
 [h3]Real Code Area[/h3]
 
-IZ mode replaces the editor's 128 separate text fields with one real editor, with a gutter and current-line highlight.
+IZ mode replaces the editor's 128 text fields with one real editor, with a gutter and current-line highlight.
 
 [list]
 [*]Drag selection
@@ -246,11 +249,11 @@ IZ mode replaces the editor's 128 separate text fields with one real editor, wit
 
 The editor knows what is on each pin, and what a selector reaches: [b]pump.[/b] and [b]leds.[/b] suggest that device's properties, with live values.
 
-It also completes pins, prefab names, slot properties, game constants, queries and your own declarations.
+It also completes pins, prefabs, slot properties, game constants, queries and your own declarations.
 
 [h3]Live Errors[/h3]
 
-The compiler the chip runs analyzes the editor shortly after you stop typing.
+The compiler the chip runs analyzes the editor as you type.
 
 [list]
 [*]Red underline — errors
@@ -262,7 +265,7 @@ Runtime errors light the housing's error LED, as an IC10 exception does.
 
 [h3]Hover Information[/h3]
 
-Hover a device variable to see its equipment, label, hash and readable properties.
+Hover a device to see its equipment, label, hash and readable properties.
 
 [h2]REQUIREMENTS[/h2]
 
@@ -279,13 +282,13 @@ Enable IZCode in the mods menu; [b][IZCode][/b] in [b]Player.log[/b] confirms it
 
 [b]#iz[/b] is a valid IC10 comment, so an IZ chip does not break for players without IZCode.
 
-Example programs are in [b]samples/[/b]: pressure control, solar tracking, queries and a hardsuit controller.
+Example programs are in [b]samples/[/b]: pressure, solar tracking, queries and a hardsuit controller.
 
 [h2]MULTIPLAYER[/h2]
 
 [b]Multiplayer has NOT been tested.[/b]
 
-Every client and the server need the mod installed. Report findings on the issue tracker.
+Every client and the server need the mod installed.
 
 [h2]LINKS[/h2]
 
@@ -311,6 +314,19 @@ Every client and the server need the mod installed. Report findings on the issue
   and is refused at compile time. Reading an empty pin still stops the program
   and lights the housing LED, which is the right answer for a cable somebody will
   plug in. This is IC10's 'sdse'. See 'samples/optional-devices.iz'.
+
+- Batch reads now answer in the five modes the game has, not only the average. A
+  batch property is the sequence of readings of every device the selector matched,
+  and used bare it still means '.avg()'; written after it, 'sum()', 'min()',
+  'max()' and 'count()' collapse that sequence another way. They work on the
+  inline selector and on a name declared from one - 'all(X).Power.sum()' and
+  'panels.Charge.min()' - take no argument, and pick which of the game's batch
+  methods travels in the instruction, so the chain costs the single read the bare
+  property costs. An empty batch gives 0 for all of them, 'min()' included, which
+  is 0 and not infinity; 'count()' is the one that still answers, and it is what
+  tells "nothing on the network" from "everything reading zero". The editor
+  offers the five after 'all(X).Power.', and hovering the chain shows the value
+  under the mode that was written. See 'samples/solar.iz'.
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>

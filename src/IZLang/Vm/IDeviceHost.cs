@@ -10,6 +10,12 @@ namespace IZLang.Vm
         Sum = 1,
         Minimum = 2,
         Maximum = 3,
+
+        /// <summary>
+        /// How many devices answered. The only mode for which an empty batch is a
+        /// real answer instead of a failed read.
+        /// </summary>
+        Count = 4,
     }
 
     /// <summary>
@@ -208,13 +214,15 @@ namespace IZLang.Vm
                 count++;
             }
 
-            if (count == 0) return false;
+            // Nothing matched: 'count' still has an answer, and it is 0.
+            if (count == 0) return aggregation == BatchAggregation.Count;
 
             switch (aggregation)
             {
                 case BatchAggregation.Sum: value = sum; break;
                 case BatchAggregation.Minimum: value = minimum; break;
                 case BatchAggregation.Maximum: value = maximum; break;
+                case BatchAggregation.Count: value = count; break;
                 default: value = sum / count; break;
             }
             return true;

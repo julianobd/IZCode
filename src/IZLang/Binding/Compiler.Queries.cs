@@ -235,8 +235,114 @@ namespace IZLang.Binding
             if (steps.Count == 0) return false;
             steps.Reverse();
 
+            if (TryEmitBatchAggregation(source, steps, out result)) return true;
+
             result = EmitQuery(source, steps);
             return true;
+        }
+
+        /// <summary>The five ways the game itself can collapse a batch read.</summary>
+        private static readonly Dictionary<string, BatchAggregation> BatchTerminals =
+            new Dictionary<string, BatchAggregation>(StringComparer.Ordinal)
+            {
+                ["avg"] = BatchAggregation.Average,
+                ["sum"] = BatchAggregation.Sum,
+                ["min"] = BatchAggregation.Minimum,
+                ["max"] = BatchAggregation.Maximum,
+                ["count"] = BatchAggregation.Count,
+            };
+
+        /// <summary>
+        /// 'all(StructureSolarPanel).Power.sum()' and its four siblings.
+        ///
+        /// A batch property is the sequence of readings of every device the selector
+        /// matched, and used bare it means '.avg()'. The terminal only picks which of
+        /// the five modes travels in the instruction, so the whole chain still costs
+        /// the single batch read the bare property costs.
+        ///
+        /// It is caught here rather than in EmitCall because the chain is
+        /// indistinguishable from a query over a list until the source is resolved,
+        /// and letting it reach the query machinery would answer a batch read with a
+        /// message about lists.
+        /// </summary>
+        private bool TryEmitBatchAggregation(ExpressionSyntax source, List<QueryStep> steps,
+                                             out IZType result)
+        {
+            result = IZType.Error;
+
+            if (!(source is MemberExpression member)) return false;
+            int line = LineOf(source.Span);
+
+            // 'pump.Pressure.sum()' - the mode only exists when the game does the
+            // reading, and a pin hands over one value with nothing to collapse.
+            if (member.Target is NameExpression pinName &&
+                _scope.LookupNoUse(pinName.Name) is DeviceSymbol pinDevice && !pinDevice.IsBatch &&
+                BatchTerminals.ContainsKey(steps[0].Name))
+            {
+                _diagnostics.Report(IZErrorCode.TypeMismatch, steps[0].Span,
+                    "'" + steps[0].Name + "' collapses a batch read, and '" + pinName.Name +
+                    "' is a single device on pin " + DevicePins.Name(pinDevice.Pin));
+                Emit(OpCode.PushZero, 0, 0, line);
+                return true;
+            }
+
+            if (!IsBatchMemberRead(member)) return false;
+
+            if (!BatchTerminals.TryGetValue(steps[0].Name, out var aggregation))
+            {
+                _diagnostics.Report(IZErrorCode.TypeMismatch, steps[0].Span,
+                    "a batch read is done by the game and only knows avg, sum, min, max " +
+                    "and count; '" + steps[0].Name + "' works on a list");
+                Emit(OpCode.PushZero, 0, 0, line);
+                return true;
+            }
+
+            if (steps[0].Arguments.Count != 0)
+            {
+                _diagnostics.Report(IZErrorCode.WrongArgumentCount, steps[0].Span,
+                    "'" + steps[0].Name + "' over a batch read takes no argument: the game " +
+                    "collapses the readings, and there is no element to hand over");
+            }
+
+            if (steps.Count > 1)
+            {
+                _diagnostics.Report(IZErrorCode.TypeMismatch, steps[1].Span,
+                    "'" + steps[0].Name + "' already gives back a single value, so '" +
+                    steps[1].Name + "' has nothing left to work on");
+            }
+
+            result = EmitBatchMemberRead(member, aggregation, line);
+            return true;
+        }
+
+        /// <summary>
+        /// Is this member read a batch read - 'all(X).Power', or 'lights.Power' over a
+        /// name declared from a selector? Only those can carry a terminal.
+        /// </summary>
+        private bool IsBatchMemberRead(MemberExpression member)
+        {
+            if (member.Target is BatchSelectorExpression) return true;
+
+            return member.Target is NameExpression name &&
+                   _scope.LookupNoUse(name.Name) is DeviceSymbol device && device.IsBatch;
+        }
+
+        private IZType EmitBatchMemberRead(MemberExpression member, BatchAggregation aggregation,
+                                           int line)
+        {
+            if (!TryResolveLogicType(member, out int logicType))
+            {
+                Emit(OpCode.PushZero, 0, 0, line);
+                return IZType.Error;
+            }
+
+            if (member.Target is BatchSelectorExpression selector)
+                EmitBatchLoad(selector, logicType, aggregation, line);
+            else
+                EmitBatchLoad((DeviceSymbol)_scope.Lookup(((NameExpression)member.Target).Name)!,
+                              logicType, aggregation, line);
+
+            return IZType.Num;
         }
 
         private IZType EmitQuery(ExpressionSyntax source, List<QueryStep> steps)

@@ -170,9 +170,12 @@ namespace IZCode.Mod.Runtime
                 count++;
             }
 
-            // No device matched: return 0, like IC10, instead of NaN.
+            // No device matched: return 0, like IC10, instead of NaN. 'count' is the
+            // exception - it was asking how many, and none is the answer it wanted.
             if (count == 0)
             {
+                if (aggregation == BatchAggregation.Count) return true;
+
                 ReportEmptyBatch("read", "batch-read-empty", devices.Count, prefabHash, nameHash, type);
                 return false;
             }
@@ -182,6 +185,7 @@ namespace IZCode.Mod.Runtime
                 case BatchAggregation.Sum: value = sum; break;
                 case BatchAggregation.Minimum: value = minimum; break;
                 case BatchAggregation.Maximum: value = maximum; break;
+                case BatchAggregation.Count: value = count; break;
                 default: value = sum / count; break;
             }
             return true;

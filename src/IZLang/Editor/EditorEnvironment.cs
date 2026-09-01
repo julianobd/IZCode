@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using IZLang.Devices;
+using IZLang.Vm;
 
 namespace IZLang.Editor
 {
@@ -45,10 +46,11 @@ namespace IZLang.Editor
         DeviceInfo? ResolveSelector(DeviceSelector selector);
 
         /// <summary>
-        /// Current value of a property over the devices the selector matches, averaged
-        /// the same way a batch read averages them. null when nothing readable matches.
+        /// Current value of a property over the devices the selector matches, collapsed
+        /// the same way a batch read collapses them. null when nothing readable matches,
+        /// except for <see cref="BatchAggregation.Count"/>, whose answer is then 0.
         /// </summary>
-        double? GetSelectorValue(DeviceSelector selector, int logicType);
+        double? GetSelectorValue(DeviceSelector selector, int logicType, BatchAggregation aggregation);
     }
 
     /// <summary>Empty environment: no wired devices and no catalog.</summary>
@@ -62,7 +64,8 @@ namespace IZLang.Editor
         public double? GetLiveValue(int pin, int logicType) => null;
         public double? GetGlobalValue(int slot) => null;
         public DeviceInfo? ResolveSelector(DeviceSelector selector) => null;
-        public double? GetSelectorValue(DeviceSelector selector, int logicType) => null;
+        public double? GetSelectorValue(DeviceSelector selector, int logicType,
+                                        BatchAggregation aggregation) => null;
     }
 
     /// <summary>Configurable in-memory environment, for tests and dry runs.</summary>
@@ -157,22 +160,37 @@ namespace IZLang.Editor
             return found;
         }
 
-        public double? GetSelectorValue(DeviceSelector selector, int logicType)
+        public double? GetSelectorValue(DeviceSelector selector, int logicType,
+                                        BatchAggregation aggregation)
         {
             if (selector.IsEmpty) return null;
 
             double sum = 0.0;
+            double minimum = double.MaxValue;
+            double maximum = double.MinValue;
             int count = 0;
 
             foreach (var entry in _network)
             {
                 if (!Matches(entry, selector)) continue;
                 if (!entry.Values.TryGetValue(logicType, out double value)) continue;
+
                 sum += value;
+                if (value < minimum) minimum = value;
+                if (value > maximum) maximum = value;
                 count++;
             }
 
-            return count > 0 ? sum / count : (double?)null;
+            if (count == 0) return aggregation == BatchAggregation.Count ? 0.0 : (double?)null;
+
+            switch (aggregation)
+            {
+                case BatchAggregation.Sum: return sum;
+                case BatchAggregation.Minimum: return minimum;
+                case BatchAggregation.Maximum: return maximum;
+                case BatchAggregation.Count: return count;
+                default: return sum / count;
+            }
         }
     }
 }

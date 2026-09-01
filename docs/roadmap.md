@@ -35,7 +35,6 @@ iteration order of batch operations.
 
 None of this is needed for v0.1 to work.
 
-- explicit batch aggregation: `sum(all(X).Power)` beyond the implicit average
 - `import` from another chip, for shared libraries
 - unreachable code warning (the `UnreachableCode` error code is already
   reserved; `UnusedVariable` is out, and the editor's error panel shows it)

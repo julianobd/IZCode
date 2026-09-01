@@ -1,7 +1,8 @@
 #iz
-// Solar tracking in batch: aligns every panel at once.
+// Solar tracking in batch: aligns every panel at once, and reports on the farm.
 
-device sensor = d0;
+device sensor  = d0;
+device display = d1;
 
 fn main() {
     loop {
@@ -13,6 +14,19 @@ fn main() {
 
         all(StructureSolarPanelDual).Vertical = vertical;
         all(StructureSolarPanelDual).Horizontal = horizontal;
+
+        // A batch property is the sequence of readings of every panel that
+        // answered, and used bare it means .avg(). The five terminals collapse
+        // that sequence another way, in the same single read.
+        var total = all(StructureSolarPanel).PowerGeneration.sum();
+        var worst = all(StructureSolarPanel).PowerGeneration.min();
+        var panels = all(StructureSolarPanel).PowerGeneration.count();
+
+        display.Setting = total;
+
+        // count() is the one terminal an empty farm still answers, so it is what
+        // tells "no panel on the network" from "every panel in the dark".
+        display.On = panels > 0 && worst > 0.0;
 
         sleep(1);
     }

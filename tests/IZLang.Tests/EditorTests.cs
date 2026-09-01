@@ -725,6 +725,106 @@ namespace IZLang.Tests
                 Hover("fn hel|per() { }\nfn main() { }").Kind);
         }
 
+        // ==================================================================
+        //  Batch aggregation terminals
+        // ==================================================================
+
+        [Fact]
+        public void AfterABatchPropertyItSuggestsTheFiveTerminals()
+        {
+            var result = Complete(
+                "fn main() { var p = all(StructureGasSensor).Pressure.| }", Environment());
+
+            Assert.Equal(CompletionContext.BatchTerminal, result.Context);
+            Assert.Equal(new[] { "avg", "sum", "min", "max", "count" }, Labels(result));
+        }
+
+        [Fact]
+        public void ADeclaredSelectorOffersTheTerminalsToo()
+        {
+            var result = Complete(
+                "device roof = all(StructureGasSensor);\n" +
+                "fn main() { var p = roof.Pressure.| }\n", Environment());
+
+            Assert.Equal(CompletionContext.BatchTerminal, result.Context);
+            Assert.Contains("sum", Labels(result));
+        }
+
+        [Fact]
+        public void TheTerminalsDoNotShowUpWhereThePropertiesGo()
+        {
+            var result = Complete("fn main() { all(StructureGasSensor).| }", Environment());
+
+            Assert.Equal(CompletionContext.DeviceProperty, result.Context);
+
+            var labels = Labels(result);
+            Assert.Contains("Pressure", labels);
+            Assert.DoesNotContain("sum", labels);
+            Assert.DoesNotContain("count", labels);
+        }
+
+        [Fact]
+        public void ADeviceOnAPinIsOfferedNoTerminal()
+        {
+            var environment = Environment();
+            environment.Wire(0, Sensor());
+
+            var result = Complete(
+                "device s = d0;\n" +
+                "fn main() { var p = s.Pressure.| }\n", environment);
+
+            Assert.NotEqual(CompletionContext.BatchTerminal, result.Context);
+        }
+
+        [Fact]
+        public void HoverOnABatchPropertyShowsTheValueUnderTheWrittenMode()
+        {
+            var environment = Environment();
+            environment.AddNetworkDevice(Sensor(), "roof",
+                new Dictionary<int, double> { [LogicPressure] = 10.0 });
+            environment.AddNetworkDevice(Sensor(), "roof",
+                new Dictionary<int, double> { [LogicPressure] = 30.0 });
+
+            string program =
+                "device roof = named(StructureGasSensor, \"roof\");\n" +
+                "fn main() { var p = roof.Pres|sure";
+
+            Assert.Contains("average over the batch: 20", Hover(program + "; }", environment).ToText());
+            Assert.Contains("sum over the batch: 40", Hover(program + ".sum(); }", environment).ToText());
+            Assert.Contains("smallest in the batch: 10", Hover(program + ".min(); }", environment).ToText());
+            Assert.Contains("biggest in the batch: 30", Hover(program + ".max(); }", environment).ToText());
+            Assert.Contains("devices answering: 2", Hover(program + ".count(); }", environment).ToText());
+        }
+
+        [Fact]
+        public void HoverOnTheTerminalSaysWhatItCollapses()
+        {
+            var environment = Environment();
+            environment.AddNetworkDevice(Sensor(), "roof",
+                new Dictionary<int, double> { [LogicPressure] = 10.0 });
+            environment.AddNetworkDevice(Sensor(), "roof",
+                new Dictionary<int, double> { [LogicPressure] = 30.0 });
+
+            var hover = Hover(
+                "device roof = named(StructureGasSensor, \"roof\");\n" +
+                "fn main() { var p = roof.Pressure.s|um(); }\n", environment);
+
+            Assert.Equal("sum()", hover.Title);
+
+            string text = hover.ToText();
+            Assert.Contains("every reading added up", text);
+            Assert.Contains("sum over the batch: 40", text);
+        }
+
+        [Fact]
+        public void HoverOnMinWarnsThatAnEmptyBatchGivesZero()
+        {
+            var hover = Hover(
+                "fn main() { var p = all(StructureGasSensor).Pressure.m|in(); }", Environment());
+
+            Assert.Contains("0 when nothing matched, not infinity", hover.ToText());
+        }
+
         [Fact]
         public void HoverOnWhitespaceReturnsNothing()
         {

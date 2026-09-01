@@ -153,7 +153,8 @@ namespace IZCode.Mod.Runtime
             return any ? Catalog.FindByHash(found) : null;
         }
 
-        public double? GetSelectorValue(DeviceSelector selector, int logicType)
+        public double? GetSelectorValue(DeviceSelector selector, int logicType,
+                                        BatchAggregation aggregation)
         {
             if (selector.PrefabName == null && selector.Label == null) return null;
 
@@ -165,6 +166,8 @@ namespace IZCode.Mod.Runtime
             var type = (LogicType)logicType;
 
             double sum = 0.0;
+            double minimum = double.MaxValue;
+            double maximum = double.MinValue;
             int count = 0;
 
             for (int i = 0; i < devices.Count; i++)
@@ -178,7 +181,10 @@ namespace IZCode.Mod.Runtime
                     if (selector.Label != null && device.GetNameHash() != labelHash) continue;
                     if (!device.CanLogicRead(type)) continue;
 
-                    sum += device.GetLogicValue(type);
+                    double value = device.GetLogicValue(type);
+                    sum += value;
+                    if (value < minimum) minimum = value;
+                    if (value > maximum) maximum = value;
                     count++;
                 }
                 catch
@@ -188,8 +194,16 @@ namespace IZCode.Mod.Runtime
                 }
             }
 
-            // The average, which is what a batch read gives by default.
-            return count > 0 ? sum / count : (double?)null;
+            if (count == 0) return aggregation == BatchAggregation.Count ? 0.0 : (double?)null;
+
+            switch (aggregation)
+            {
+                case BatchAggregation.Sum: return sum;
+                case BatchAggregation.Minimum: return minimum;
+                case BatchAggregation.Maximum: return maximum;
+                case BatchAggregation.Count: return count;
+                default: return sum / count;
+            }
         }
     }
 }

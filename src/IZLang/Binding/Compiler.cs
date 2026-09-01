@@ -2197,9 +2197,7 @@ namespace IZLang.Binding
                 // averaged over everything it matches.
                 if (device.IsBatch)
                 {
-                    EmitDeviceSelectorOperands(device, line);
-                    Emit(device.HasLabel ? OpCode.BatchNamedLoad : OpCode.BatchLoad,
-                         logicType, (int)BatchAggregation.Average, line);
+                    EmitBatchLoad(device, logicType, BatchAggregation.Average, line);
                     return IZType.Num;
                 }
 
@@ -2215,9 +2213,7 @@ namespace IZLang.Binding
                     Emit(OpCode.PushZero, 0, 0, line);
                     return IZType.Error;
                 }
-                EmitBatchSelectorOperands(selector, line);
-                Emit(selector.Kind == BatchSelectorKind.All ? OpCode.BatchLoad : OpCode.BatchNamedLoad,
-                    logicType, (int)BatchAggregation.Average, line);
+                EmitBatchLoad(selector, logicType, BatchAggregation.Average, line);
                 return IZType.Num;
             }
 
@@ -2446,6 +2442,27 @@ namespace IZLang.Binding
         {
             EmitConstant(device.PrefabHash, line);
             if (device.HasLabel) EmitConstant(device.LabelHash, line);
+        }
+
+        /// <summary>
+        /// The batch read itself, for a name declared from a selector. The mode is
+        /// Average unless one of the terminals asked for another one.
+        /// </summary>
+        private void EmitBatchLoad(DeviceSymbol device, int logicType,
+                                   BatchAggregation aggregation, int line)
+        {
+            EmitDeviceSelectorOperands(device, line);
+            Emit(device.HasLabel ? OpCode.BatchNamedLoad : OpCode.BatchLoad,
+                 logicType, (int)aggregation, line);
+        }
+
+        /// <summary>Same read, for the selector written where it is used.</summary>
+        private void EmitBatchLoad(BatchSelectorExpression selector, int logicType,
+                                   BatchAggregation aggregation, int line)
+        {
+            EmitBatchSelectorOperands(selector, line);
+            Emit(selector.Kind == BatchSelectorKind.All ? OpCode.BatchLoad : OpCode.BatchNamedLoad,
+                 logicType, (int)aggregation, line);
         }
 
         /// <summary>

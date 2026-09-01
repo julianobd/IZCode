@@ -124,6 +124,198 @@ namespace IZLang.Tests
         }
 
         // ------------------------------------------------------------------
+        //  Aggregation modes
+        // ------------------------------------------------------------------
+
+        /// <summary>Three panels answering 10, 30 and 50 - avg 30, sum 90, min 10, max 50.</summary>
+        private static MemoryDeviceHost Panels()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+            int label = PrefabHash.Compute("roof");
+            host.AddNetworkDevice(PumpHash, label).Values[LogicPressure] = 10.0;
+            host.AddNetworkDevice(PumpHash, label).Values[LogicPressure] = 30.0;
+            host.AddNetworkDevice(PumpHash, label).Values[LogicPressure] = 50.0;
+            return host;
+        }
+
+        private static double Inline(string terminal)
+        {
+            var host = Panels();
+            RunOn(host,
+                "device out = d0;\n" +
+                "fn main() { out.Setting = all(StructureVolumePump).Pressure" + terminal + "; }\n");
+            return host.Writes.Last().Value;
+        }
+
+        private static double Declared(string terminal)
+        {
+            var host = Panels();
+            RunOn(host,
+                "device out = d0;\n" +
+                "device pumps = all(StructureVolumePump);\n" +
+                "fn main() { out.Setting = pumps.Pressure" + terminal + "; }\n");
+            return host.Writes.Last().Value;
+        }
+
+        [Theory]
+        [InlineData("", 30.0)]
+        [InlineData(".avg()", 30.0)]
+        [InlineData(".sum()", 90.0)]
+        [InlineData(".min()", 10.0)]
+        [InlineData(".max()", 50.0)]
+        [InlineData(".count()", 3.0)]
+        public void EachTerminalCollapsesTheBatchItsOwnWay(string terminal, double expected)
+        {
+            Assert.Equal(expected, Inline(terminal));
+            Assert.Equal(expected, Declared(terminal));
+        }
+
+        [Fact]
+        public void ALabelledSelectorCarriesTheModeAsWell()
+        {
+            var host = Panels();
+            host.AddNetworkDevice(PumpHash, PrefabHash.Compute("cellar")).Values[LogicPressure] = 900.0;
+
+            RunOn(host,
+                "device out = d0;\n" +
+                "fn main() { out.Setting = named(StructureVolumePump, \"roof\").Pressure.max(); }\n");
+
+            Assert.Equal(50.0, host.Writes.Last().Value);
+        }
+
+        [Fact]
+        public void ADeclaredLabelledSelectorCarriesTheModeAsWell()
+        {
+            var host = Panels();
+            host.AddNetworkDevice(PumpHash, PrefabHash.Compute("cellar")).Values[LogicPressure] = 900.0;
+
+            RunOn(host,
+                "device out = d0;\n" +
+                "device roof = named(StructureVolumePump, \"roof\");\n" +
+                "fn main() { out.Setting = roof.Pressure.sum(); }\n");
+
+            Assert.Equal(90.0, host.Writes.Last().Value);
+        }
+
+        [Theory]
+        [InlineData(".avg()")]
+        [InlineData(".sum()")]
+        [InlineData(".min()")]
+        [InlineData(".max()")]
+        [InlineData(".count()")]
+        public void AnEmptyBatchGivesZeroForEveryMode(string terminal)
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+
+            RunOn(host,
+                "device out = d0;\n" +
+                "fn main() { out.Setting = all(StructureWallLight).Setting" + terminal + "; }\n");
+
+            // 'min' over nothing is 0, not infinity: the host reports the read failed
+            // and the VM keeps the untouched value.
+            Assert.Equal(0.0, host.Writes.Last().Value);
+        }
+
+        [Fact]
+        public void CountIsTheOneModeThatAnswersAnEmptyBatch()
+        {
+            var host = new MemoryDeviceHost();
+            Assert.True(host.TryBatchRead(LightHash, LogicOn, BatchAggregation.Count, out double count));
+            Assert.Equal(0.0, count);
+
+            Assert.False(host.TryBatchRead(LightHash, LogicOn, BatchAggregation.Minimum, out double _));
+        }
+
+        [Fact]
+        public void TheExplicitAverageEmitsWhatTheBarePropertyEmits()
+        {
+            var bare = TestHost.CompileOk(
+                "device out = d0;\n" +
+                "fn main() { out.Setting = all(StructureVolumePump).Pressure; }\n");
+
+            var explicitAvg = TestHost.CompileOk(
+                "device out = d0;\n" +
+                "fn main() { out.Setting = all(StructureVolumePump).Pressure.avg(); }\n");
+
+            Assert.Equal(Disassemble(bare), Disassemble(explicitAvg));
+        }
+
+        [Fact]
+        public void TheModeTravelsInOperandBOfTheSameInstruction()
+        {
+            var program = TestHost.CompileOk(
+                "device out = d0;\n" +
+                "fn main() { out.Setting = all(StructureVolumePump).Pressure.max(); }\n");
+
+            var load = Assert.Single(program.Code, i => i.Op == OpCode.BatchLoad);
+            Assert.Equal((int)BatchAggregation.Maximum, load.B);
+        }
+
+        [Fact]
+        public void AnAggregationOnAPinDeviceIsRefused()
+        {
+            var error = TestHost.CompileError(
+                "device pump = d0;\n" +
+                "fn main() { var x = pump.Pressure.sum(); }\n",
+                IZErrorCode.TypeMismatch);
+
+            Assert.Contains("d0", error.Message);
+        }
+
+        [Fact]
+        public void AQueryMethodOnABatchReadIsRefused()
+        {
+            var error = TestHost.CompileError(
+                "fn main() { var x = all(StructureVolumePump).Pressure.where(p => p > 1); }\n",
+                IZErrorCode.TypeMismatch);
+
+            Assert.Contains("avg, sum, min, max and count", error.Message);
+        }
+
+        [Fact]
+        public void AFirstOnABatchReadIsRefusedToo()
+        {
+            TestHost.CompileError(
+                "device pumps = all(StructureVolumePump);\n" +
+                "fn main() { var x = pumps.Pressure.first(); }\n",
+                IZErrorCode.TypeMismatch);
+        }
+
+        [Fact]
+        public void ATerminalTakesNoArgument()
+        {
+            TestHost.CompileError(
+                "fn main() { var x = all(StructureVolumePump).Pressure.sum(p => p); }\n",
+                IZErrorCode.WrongArgumentCount);
+        }
+
+        [Fact]
+        public void NothingCanFollowATerminal()
+        {
+            TestHost.CompileError(
+                "fn main() { var x = all(StructureVolumePump).Pressure.sum().count(); }\n",
+                IZErrorCode.TypeMismatch);
+        }
+
+        [Fact]
+        public void ATerminalIsNotAnAssignmentTarget()
+        {
+            TestHost.CompileError(
+                "fn main() { all(StructureVolumePump).Pressure.sum() = 1; }\n",
+                IZErrorCode.InvalidAssignmentTarget);
+        }
+
+        [Fact]
+        public void AnUnknownPropertyIsStillCaughtUnderATerminal()
+        {
+            TestHost.CompileError(
+                "fn main() { var x = all(StructureVolumePump).Nonsense.sum(); }\n",
+                IZErrorCode.UnknownLogicType);
+        }
+
+        // ------------------------------------------------------------------
         //  How the selector is written
         // ------------------------------------------------------------------
 
@@ -270,6 +462,10 @@ namespace IZLang.Tests
             RunOn(host, source);
             return host;
         }
+
+        /// <summary>The instructions as text, so two programs can be compared op by op.</summary>
+        private static string Disassemble(IZProgram program) =>
+            string.Join("\n", program.Code.Select(i => i.Op + " " + i.A + " " + i.B));
 
         private static void RunOn(MemoryDeviceHost host, string source)
         {
