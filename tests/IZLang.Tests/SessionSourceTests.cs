@@ -76,6 +76,81 @@ namespace IZLang.Tests
             Assert.Equal("#iz\ntail", result);
         }
 
+        // ------------------------------------------------------------------
+        //  KeepsMemory: the same question, asked on the way out
+        // ------------------------------------------------------------------
+        //  What is shown and what is saved have to agree. A stricter rule here is
+        //  how a program came to be shown whole and written to the chip truncated
+        //  to the game's 128 lines.
+
+        [Fact]
+        public void UntouchedLinesKeepTheMemory()
+        {
+            Assert.True(SessionSource.KeepsMemory(Copy, Copy));
+        }
+
+        [Fact]
+        public void TheMarkerTypedAgainKeepsTheMemory()
+        {
+            // The first line is where the marker lives, so it is the line that moves
+            // on its own. Everything below it is untouched, so the program is ours.
+            string lines = "#iz\nfn main() {\n}";
+            string copy = "\nfn main() {\n}";
+
+            Assert.True(SessionSource.KeepsMemory(lines, copy));
+        }
+
+        [Fact]
+        public void AFirstLineEditedAnyOtherWayKeepsTheMemoryToo()
+        {
+            string lines = "#iz  // now with a comment\nfn main() {\n}";
+
+            Assert.True(SessionSource.KeepsMemory(lines, Copy));
+        }
+
+        [Fact]
+        public void ALineChangedBelowTheMarkerGivesUpTheMemory()
+        {
+            Assert.False(SessionSource.KeepsMemory("#iz\nfn main() {\n}\nelse", Copy));
+        }
+
+        [Fact]
+        public void ClearedLinesGiveUpTheMemory()
+        {
+            Assert.False(SessionSource.KeepsMemory(string.Empty, Copy));
+        }
+
+        [Fact]
+        public void WithNothingRememberedThereIsNoMemoryToKeep()
+        {
+            Assert.False(SessionSource.KeepsMemory(Copy, null));
+        }
+
+        [Fact]
+        public void KeepsMemoryAgreesWithResolve()
+        {
+            // The two have to be the same decision: whenever Resolve hands back the
+            // program, KeepsMemory has to say so, and whenever it hands back the
+            // lines it has to say the opposite. Saving reads the second, showing
+            // reads the first, and they cannot disagree.
+            string[] candidates =
+            {
+                Copy,
+                "#iz\nfn main() {\n}",
+                "#iz  // edited\nfn main() {\n}",
+                "#iz\nfn main() {\n}\nelse",
+                "",
+                "#iz",
+            };
+
+            foreach (string lines in candidates)
+            {
+                string resolved = SessionSource.Resolve(lines, Program, Copy);
+                bool keptTheLines = resolved == lines;
+                Assert.Equal(!keptTheLines, SessionSource.KeepsMemory(lines, Copy));
+            }
+        }
+
         [Fact]
         public void NullLinesAreEmpty()
         {

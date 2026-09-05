@@ -56,10 +56,20 @@ if label == "vent-north" { ... }          // compares the text, not an address
 ```
 
 It joins with `+`, compares with the six operators, and comes with a small text
-library (`text`, `sub`, `find`, `chr`, `char`, `fixed`, `parse`, `hash`, `len`).
-A literal label still folds to its hash at compile time, so nothing that was
-free before became expensive. See section 11 of
+library (`text`, `sub`, `find`, `chr`, `char`, `fixed`, `parse`, `hash`, `len`,
+`packstr`, `unpackstr`). A literal label still folds to its hash at compile time,
+so nothing that was free before became expensive. See section 11 of
 [docs/language-spec.md](docs/language-spec.md) and `samples/text.iz`.
+
+Text also reaches a screen. `Setting` is the one device property that takes a
+`str`, because it is the one the game reads back as characters:
+
+```iz
+display.Mode    = DisplayMode.String;     // once, not every tick
+display.Setting = "Ok";                   // six characters, on the display
+```
+
+See [Text on a display](#text-on-a-display) and `samples/led-panel.iz`.
 
 Newer still is the last row. A `list` is an array plus how much of it is in use,
 and it comes with the query methods, in the shape of LINQ's:
@@ -260,6 +270,51 @@ inline form. And one thing a pin can do it cannot: `+=` on a property, because a
 batch has no single value to read back.
 
 See `samples/named-devices.iz`.
+
+## Text on a display
+
+Every device property is a number, with one exception. A LED display whose
+`Mode` is `DisplayMode.String`, and the circuit housing's own screen whose `Mode`
+is `SettingDisplayMode.String`, read `Setting` back as characters - one per byte,
+six at most. Those are the only two places in the game where a reading becomes
+text, so `Setting` is the only property that takes a `str`:
+
+```iz
+device pump    = d0;
+device display = all(StructureConsoleLED5);
+
+fn main() {
+    display.Mode = DisplayMode.String;      // once: the mode is saved with the device
+
+    loop {
+        display.Setting = pump.On != 0 ? "Run" : "Idle";
+        yield;
+    }
+}
+```
+
+Written as a literal it is packed at compile time and costs nothing; built while
+the program runs it is packed on the spot. Seven characters, or anything that is
+not ASCII, is a compile error rather than a display quietly showing half a word.
+
+Reading goes the other way with `unpackstr`:
+
+```iz
+var showing = unpackstr(display.Setting);   // "Run"
+```
+
+`packstr(str) -> num` and `unpackstr(num) -> str` are the same pair spelled out,
+for when the number has to travel through a variable or a `LogicMemory` first.
+
+None of this is `hash`. A hash identifies a prefab or a label and never comes
+back as text; packed text is six characters and is exactly reversible. Writing
+`display.Setting = #"Ok"` puts the CRC32 of "Ok" on the screen, which is the nine
+digit number and not the word - that is what `"Ok"` is for.
+
+Any other property still refuses text, on purpose: `light.Color = "red"` is a
+mistake worth being told about, not something to convert away.
+
+See `samples/led-panel.iz`.
 
 ## Lists
 
@@ -558,9 +613,11 @@ offers `all` and `named` after them), prefab names inside `all(...)` and
 game's named values - `Color.` lists the twelve colors with the number each one
 stands for.
 
-`Tab` accepts the suggestion, `Ctrl`+arrows move through the list, `Esc` closes
-it, `Ctrl+Space` opens the full list. With the list closed, `Tab` goes back to
-indenting. On a blank line, with nothing typed, the list does **not** open by
+`Tab` accepts the suggestion, the up and down arrows move through the list, `Esc`
+closes it, `Ctrl+Space` opens the full list. While the list is open the arrows
+belong to it and the caret stays put; with the list closed they move the caret as
+usual, and `Tab` goes back to indenting. On a blank line, with nothing typed, the
+list does **not** open by
 itself: dumping the whole vocabulary over the code gets in the way more than it
 helps. After a `.`, after `device x = ` or after `all(`, it does open: there
 the context is already the request.
@@ -571,11 +628,11 @@ with problems get an underline (red for an error, amber for a warning), and a
 panel at the bottom says what it is:
 
 ```
-error line 5     a batch write takes num (or bool), not str
+error line 5     'Setttng' is not a known device property; did you mean 'Setting'?
 warning line 2   const 'LED' was declared and never used
 ```
 
-The goal is for `all(DISPLAY).Setting = "OK"` to be caught right there, not on
+The goal is for a typo in a property name to be caught right there, not on
 CONFIRM.
 
 **Hover with real values.** Hovering a device variable shows the equipment, the

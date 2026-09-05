@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>IZCode</Name>
   <Author>julianobd</Author>
-  <Version>0.1.7</Version>
+  <Version>0.1.8</Version>
   <ModID>izcode</ModID>
   <Description>[h1]IZCode - Structured Programming for Stationeers[/h1]
 
@@ -301,19 +301,37 @@ Every client and the server need the mod installed.
 [hr]
 </Description>
   <ChangeLog>
-===== 0.1.7 =========================================================
-- A slot can now be read across a batch: 'named(StructureHydroponicsAutomated,
-  #"north").slot[0].Mature.max()'. Until now a slot could only be read through a
-  pin, so a program could watch at most six trays, chutes or lockers no matter
-  how many were on the network. The batch form behaves exactly like a batch
-  property: the sequence of readings of every matched device, with the same five
-  terminals, and '.avg()' when none is written. A device that has no slot at that
-  index, or whose slot cannot answer that property, is skipped instead of
-  counting as a zero, so an empty tray does not drag the average down and
-  'count()' keeps meaning "how many answered". A selector that matches nothing
-  reads 0, like every other batch read, where an empty pin still stops the chip.
-  A slot stays read only in both forms. This is IC10's 'lbs' and 'lbns'. See
-  'samples/hydroponics.iz'.
+===== 0.1.8 =========================================================
+- Text on a display. 'display.Setting = "Ok"' now compiles and shows the word:
+  Setting is packed the way the game's own 'str"..."' packs it, up to six ASCII
+  characters, one per byte. It is what a LED display reads back when its Mode is
+  DisplayMode.String, and what the circuit housing's own screen reads when its
+  Mode is SettingDisplayMode.String - the only two places the game turns a
+  reading into text, so Setting is the only property that takes a str. A literal
+  is packed at compile time and costs nothing; text built while the program runs
+  is packed on the spot. Seven characters, or anything that is not ASCII, is a
+  compile error instead of a half word on the screen. 'packstr(s)' and
+  'unpackstr(x)' spell the same conversion out, for when the number has to travel
+  through a variable first. This is not hash(): a hash picks a device and never
+  comes back as text, which is why '#"Ok"' used to put a nine digit number on the
+  display. See 'samples/led-panel.iz'.
+- A batch that reaches no device now names the prefab and the label in the
+  warning instead of printing their hashes, so the log says which line of the
+  script to look at.
+- The suggestion list is walked with the up and down arrows. They used to move
+  the caret first, which recomputed the list for the new position and sent the
+  selection back to the top - so the list could not be walked at all, with Ctrl
+  held or without it. While the list is open the arrows belong to it; Esc closes
+  it and gives them back.
+- Ctrl+V no longer loses lines. TextMeshPro pastes by handing the clipboard to
+  the editor one character at a time, so every '}' that began its line was
+  refused to be re-indented on the next frame - and only one of them ever came
+  back. The code area now pastes the whole clipboard as a single edit, keeps the
+  indentation it arrived with, and turns a tab into a full level instead of one
+  space.
+- The suggestion list no longer jumps to the mouse pointer when the caret has no
+  measured position yet, which happened on the frame a new line was opened and
+  read as the list not appearing.
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>

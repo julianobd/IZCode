@@ -46,6 +46,26 @@ namespace IZLang.Editor
             return current;
         }
 
+        /// <summary>
+        /// Whether the remembered program still describes what the editor holds.
+        ///
+        /// This is exactly the negation of <see cref="Resolve"/>'s last case, kept
+        /// apart because two questions are asked of the same state: which text to
+        /// show when the code area switches on, and whether the memory - rather than
+        /// the game's 128 cut-down lines - is what leaves the editor when the player
+        /// saves. Answering the second one with a stricter rule of its own is how a
+        /// program came to be shown whole and saved truncated.
+        /// </summary>
+        public static bool KeepsMemory(string? lines, string? copy)
+        {
+            if (copy == null) return false;
+
+            string current = lines ?? string.Empty;
+
+            return string.Equals(current, copy, StringComparison.Ordinal) ||
+                   string.Equals(Below(current), Below(copy), StringComparison.Ordinal);
+        }
+
         /// <summary>The first line, without its line break.</summary>
         private static string First(string text)
         {

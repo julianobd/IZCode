@@ -44,6 +44,8 @@ namespace IZLang.Vm
         Text = 30,
         Fixed = 31,
         Parse = 32,
+        PackStr = 33,
+        UnpackStr = 34,
     }
 
     /// <summary>
@@ -147,6 +149,11 @@ namespace IZLang.Vm
             new BuiltinInfo(BuiltinId.Text,  "text",  Str, Num),
             new BuiltinInfo(BuiltinId.Fixed, "fixed", Str, Num, Num),
             new BuiltinInfo(BuiltinId.Parse, "parse", Num, Str),
+
+            // Up to six characters inside one number, the way a LED display in
+            // DisplayMode.String reads its Setting back.
+            new BuiltinInfo(BuiltinId.PackStr,   "packstr",   Num, Str),
+            new BuiltinInfo(BuiltinId.UnpackStr, "unpackstr", Str, Num),
         };
 
         private static readonly Dictionary<string, BuiltinInfo> ByName = BuildIndex();

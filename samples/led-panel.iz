@@ -2,24 +2,47 @@
 // Status panel in batch: nothing has to be wired to pins d0..d5.
 // Every ConsoleLED5 and every Diode on the network gets the same command.
 //
-// The counter is only there to show a sign of life: while the number moves on
-// the display and the diode blinks, the chip is running.
+// It shows the two things a display can be: a number, and a word.
 
 const DISPLAY = #"StructureConsoleLED5";
 const LED     = #"StructureDiode";
 
 const LIMIT = 100;
 
+// The housing the chip is in has a little screen of its own, and it reads
+// Setting the same way a LED display does.
+device self = db;
+
+// The one property that takes text.
+//
+// A LED display reads Setting back as characters when its Mode is
+// DisplayMode.String: six of them, one per byte. The compiler packs the literal,
+// so "Ok" costs exactly what a number costs. Seven characters would not fit and
+// are refused right here, in the editor.
+//
+// Setting is the only property like this - it is the only one the game turns
+// back into text. Everywhere else a str is still refused.
+fn show(state: str) {
+    all(DISPLAY).Setting = state;
+    self.Setting = state;
+}
+
 fn main() {
     var counter = 0;
 
-    loop {
-        // 'Setting' is a number - the display shows digits, not text.
-        // all(DISPLAY).Setting = "OK" does not compile: str is not a property value.
-        all(DISPLAY).Setting = counter;
+    // Once, not every tick: the mode is saved with the device. Without it both
+    // screens show the packed number instead of the word.
+    all(DISPLAY).Mode = DisplayMode.String;
+    self.Mode = SettingDisplayMode.String;
 
-        // A comparison gives a bool, and a bool becomes a num on write: blinks every tick.
-        all(LED).On = counter % 2 == 0;
+    loop {
+        // Halfway through the count the panel says so, in words.
+        show(counter < LIMIT / 2 ? "Idle" : "Run");
+
+        // And back the other way: unpackstr reads the number on the screen as
+        // the word again, which is how a second chip can see what the first one
+        // wrote. This is not hash(): a hash never comes back.
+        all(LED).On = unpackstr(self.Setting) == "Run";
 
         counter = (counter + 1) % LIMIT;
 

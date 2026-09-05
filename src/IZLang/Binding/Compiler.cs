@@ -1280,19 +1280,15 @@ namespace IZLang.Binding
                 }
 
                 if (assignment.Kind != AssignmentKind.Assign)
-                    Emit(OpCode.DeviceLoad, device.Pin, logicType, line);
-
-                var valueType = EmitExpression(assignment.Value);
-
-                if (assignment.Kind != AssignmentKind.Assign)
                 {
-                    RequireNumeric(valueType, assignment.Value.Span, assignment.OperatorToken.Text);
+                    Emit(OpCode.DeviceLoad, device.Pin, logicType, line);
+                    var compoundType = EmitExpression(assignment.Value);
+                    RequireNumeric(compoundType, assignment.Value.Span, assignment.OperatorToken.Text);
                     Emit(CompoundOpCode(assignment.Kind), 0, 0, line);
                 }
-                else if (!valueType.IsAssignableTo(IZType.Num))
+                else
                 {
-                    _diagnostics.Report(IZErrorCode.TypeMismatch, assignment.Value.Span,
-                        "a device property takes num (or bool), not " + valueType.Display());
+                    EmitDevicePropertyValue(assignment.Value, logicType, line);
                 }
 
                 Emit(OpCode.DeviceStore, device.Pin, logicType, line);
@@ -1313,12 +1309,7 @@ namespace IZLang.Binding
                 }
 
                 EmitBatchSelectorOperands(selector, line);
-                var valueType = EmitExpression(assignment.Value);
-                if (!valueType.IsAssignableTo(IZType.Num))
-                {
-                    _diagnostics.Report(IZErrorCode.TypeMismatch, assignment.Value.Span,
-                        "a batch write takes num (or bool), not " + valueType.Display());
-                }
+                EmitDevicePropertyValue(assignment.Value, logicType, line);
 
                 Emit(selector.Kind == BatchSelectorKind.All ? OpCode.BatchStore : OpCode.BatchNamedStore,
                     logicType, 0, line);
@@ -1336,6 +1327,71 @@ namespace IZLang.Binding
 
             // p.x = 1 - a struct field.
             EmitHeapAssignment(EmitFieldAddress(member, forWrite: true), assignment, line);
+        }
+
+        /// <summary>
+        /// The LogicType every device write is measured against for text. Only two
+        /// things in the game turn a reading back into characters, and both read
+        /// 'Setting': a LED display in DisplayMode.String and the circuit housing's
+        /// own screen in SettingDisplayMode.String.
+        /// </summary>
+        private static readonly int SettingLogicType = GameEnums.LogicTypeByName["Setting"];
+
+        /// <summary>
+        /// Pushes the value of a device property write.
+        ///
+        /// A device property is a number, with one exception: 'Setting' also takes
+        /// text, packed the way the game's own <c>str"..."</c> packs it, which is what
+        /// makes <c>display.Setting = "Ok"</c> put 'Ok' on the display. Six characters
+        /// is what fits in the number, and a longer one is refused here rather than
+        /// silently losing its tail in the game.
+        ///
+        /// Every other property keeps refusing text: writing a hash to 'Color' or to
+        /// 'On' is a mistake worth being told about, not something to convert away.
+        /// </summary>
+        private void EmitDevicePropertyValue(ExpressionSyntax value, int logicType, int line)
+        {
+            bool takesText = logicType == SettingLogicType;
+
+            if (takesText && TryEvaluateConstantString(value, out string? text))
+            {
+                if (!PackedText.CanPack(text))
+                {
+                    _diagnostics.Report(IZErrorCode.TypeMismatch, value.Span,
+                        text!.Length > PackedText.MaxLength
+                            ? "a display holds " + PackedText.MaxLength +
+                              " characters, and \"" + text + "\" has " + text.Length
+                            : "a display holds ASCII, and \"" + text +
+                              "\" has a character that does not fit in one byte");
+                    Emit(OpCode.PushZero, 0, 0, line);
+                    return;
+                }
+
+                EmitConstant(PackedText.Pack(text), line);
+                return;
+            }
+
+            var valueType = EmitExpression(value);
+            if (valueType.IsAssignableTo(IZType.Num)) return;
+
+            if (valueType == IZType.Str && takesText)
+            {
+                // Text only known while the program runs: the packing goes with it.
+                Emit(OpCode.CallBuiltin, (int)BuiltinId.PackStr, 1, line);
+                return;
+            }
+
+            if (valueType == IZType.Error) return;
+
+            // Only 'Setting' shows text, so anywhere else a str is either the hash of
+            // something, or it was meant for a display and landed on the wrong property.
+            string hint = valueType == IZType.Str
+                ? "; 'hash(x)' gives the prefab or label hash, and 'Setting' is the one " +
+                  "property that shows text"
+                : string.Empty;
+
+            _diagnostics.Report(IZErrorCode.TypeMismatch, value.Span,
+                "a device property takes num (or bool), not " + valueType.Display() + hint);
         }
 
         /// <summary>
@@ -2593,13 +2649,7 @@ namespace IZLang.Binding
             }
 
             EmitDeviceSelectorOperands(device, line);
-
-            var valueType = EmitExpression(assignment.Value);
-            if (!valueType.IsAssignableTo(IZType.Num))
-            {
-                _diagnostics.Report(IZErrorCode.TypeMismatch, assignment.Value.Span,
-                    "a batch write takes num (or bool), not " + valueType.Display());
-            }
+            EmitDevicePropertyValue(assignment.Value, logicType, line);
 
             Emit(device.HasLabel ? OpCode.BatchNamedStore : OpCode.BatchStore, logicType, 0, line);
         }

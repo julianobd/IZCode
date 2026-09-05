@@ -444,6 +444,8 @@ find(s, needle)             // where it starts, -1 when absent
 text(x)                     // a num as text
 fixed(x, decimals)          // a num as text with a fixed number of decimals
 parse(s)                    // text back into a num, nan when it is not one
+packstr(s)                  // up to 6 characters packed into one num
+unpackstr(x)                // the characters back out of it
 ```
 
 ---
@@ -638,9 +640,11 @@ const LABEL = SIDE + "-wing";        // folded; costs nothing at runtime
 
 ### 11.2 Where the text goes
 
-A str is not a number, so a device property and a batch write still refuse it -
-the game's logic network carries numbers only. What a str reaches the world
-through is the hash:
+The game's logic network carries numbers only, so a str reaches the world as one
+of two numbers, and they are not interchangeable.
+
+The **hash** is what picks a device. It is one way: nothing turns it back into
+text.
 
 ```iz
 all("Structure" + kind).On = true;   // hashed while it runs
@@ -650,6 +654,28 @@ var h = hash("StructureWallLight");  // the same value as #"StructureWallLight"
 
 `hash` of a literal or of a str `const` is folded at compile time, so the forms
 that were free before str became a value are still free.
+
+**Packed text** is what a screen shows. Up to six ASCII characters go into one
+number, one per byte, and come back out exactly - the game's own `str"..."`. Two
+things read it: a LED display whose `Mode` is `DisplayMode.String`, and the
+circuit housing's screen whose `Mode` is `SettingDisplayMode.String`.
+
+Because those are the only two, `Setting` is the only device property that
+accepts a str; every other one still refuses it.
+
+```iz
+display.Mode    = DisplayMode.String;
+display.Setting = "Ok";                 // packed at compile time
+display.Setting = "vent-" + side;       // packed while it runs
+var showing = unpackstr(display.Setting);
+
+light.Color = "red";                    // error: Color takes a num
+display.Setting = "Standby";            // error: seven characters do not fit
+```
+
+A literal longer than six characters, or one that is not ASCII, is a compile
+error rather than a word the display would quietly cut in half. Text built at
+runtime cannot be checked that way: it is packed from its first six characters.
 
 ### 11.3 Memory
 

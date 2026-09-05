@@ -145,7 +145,54 @@ namespace IZLang.Tests
         }
 
         // ==================================================================
-        //  Tab e Shift+Tab
+        //  Block closing, after the brace is already in
+        // ==================================================================
+        //  The code area cannot refuse a '}' any more: refusing every one of them to
+        //  put it back on the next frame is what made Ctrl+V lose braces, since a
+        //  paste arrives one character at a time and only the last refusal was ever
+        //  honoured. The outdent runs over the text that already holds the brace.
+
+        [Fact]
+        public void AnAlreadyTypedBraceGoesBackOneLevel()
+        {
+            var (text, caret) = Split("fn main() {\n    var x = 1;\n    }|");
+            var edit = IndentEngine.OutdentCloseBraceLine(text, caret);
+            Assert.Equal("fn main() {\n    var x = 1;\n}|", Apply(edit, text));
+        }
+
+        [Fact]
+        public void AnAlreadyTypedBraceGoesBackOnlyOneLevelAtATime()
+        {
+            var (text, caret) = Split("        }|");
+            var edit = IndentEngine.OutdentCloseBraceLine(text, caret);
+            Assert.Equal("    }|", Apply(edit, text));
+        }
+
+        [Fact]
+        public void AnAlreadyTypedBraceAfterCodeIsLeftAlone()
+        {
+            var (text, caret) = Split("    fn f() { return 1; }|");
+            Assert.True(IndentEngine.OutdentCloseBraceLine(text, caret).IsEmpty);
+        }
+
+        [Fact]
+        public void AnAlreadyTypedBraceAtColumnZeroHasNowhereToGoBackTo()
+        {
+            var (text, caret) = Split("}|");
+            Assert.True(IndentEngine.OutdentCloseBraceLine(text, caret).IsEmpty);
+        }
+
+        [Fact]
+        public void TheCaretHasToBeRightAfterTheBrace()
+        {
+            // '    }x' - the player carried on typing before the frame that would have
+            // re-indented; moving the line then would be a surprise.
+            var (text, caret) = Split("    }x|");
+            Assert.True(IndentEngine.OutdentCloseBraceLine(text, caret).IsEmpty);
+        }
+
+        // ==================================================================
+        //  Tab and Shift+Tab
         // ==================================================================
 
         [Fact]

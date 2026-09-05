@@ -305,6 +305,86 @@ namespace IZLang.Tests
         }
 
         // ------------------------------------------------------------------
+        //  Text on a display: what 'Setting' shows
+        // ------------------------------------------------------------------
+        //  A LED display in DisplayMode.String, and the circuit housing's own screen
+        //  in SettingDisplayMode.String, read Setting back as up to six characters
+        //  packed one per byte. That is the only place the game turns a reading into
+        //  text, and the only property that accepts a str.
+
+        [Fact]
+        public void TextOnSettingIsPackedAtCompileTime()
+        {
+            var program = TestHost.CompileOk(
+                "device out = d0;\n" +
+                "fn main() { out.Setting = \"Ok\"; }\n");
+
+            Assert.Contains(PackedText.Pack("Ok"), program.Constants);
+            Assert.DoesNotContain(program.Code, i => i.Op == OpCode.CallBuiltin);
+        }
+
+        [Fact]
+        public void TextOnSettingReachesTheDeviceAsANumber()
+        {
+            var host = TestHost.Execute(
+                "device out = d0;\n" +
+                "fn main() { out.Setting = \"Ok\"; }\n",
+                h => h.Connect(0));
+
+            Assert.Equal(PackedText.Pack("Ok"), host.Get(0, LogicSetting));
+        }
+
+        [Fact]
+        public void TextBuiltAtRuntimeIsPackedWhileItRuns()
+        {
+            var host = TestHost.Execute(
+                "device out = d0;\n" +
+                "var half = \"O\";\n" +
+                "fn main() { out.Setting = half + \"k\"; }\n",
+                h => h.Connect(0));
+
+            Assert.Equal(PackedText.Pack("Ok"), host.Get(0, LogicSetting));
+        }
+
+        [Fact]
+        public void ABatchSettingTakesTextToo()
+        {
+            var host = new MemoryDeviceHost();
+            var display = host.AddNetworkDevice(PrefabHash.Compute("StructureConsoleLED5"));
+
+            RunOn(host, "fn main() { all(StructureConsoleLED5).Setting = \"Ok\"; }\n");
+
+            Assert.Equal(PackedText.Pack("Ok"), display.Get(LogicSetting));
+        }
+
+        [Fact]
+        public void TextTooLongForADisplayIsRefused()
+        {
+            // Seven characters: one byte too many for the number the display reads.
+            // Better said here than silently lost on the way to the game.
+            var error = TestHost.CompileError(
+                "device out = d0;\n" +
+                "fn main() { out.Setting = \"Standby\"; }\n",
+                IZErrorCode.TypeMismatch);
+
+            Assert.Contains("6", error.Message);
+        }
+
+        [Fact]
+        public void PackstrAndUnpackstrAreEachOthersInverse() =>
+            Assert.Equal("Ok", Text("unpackstr(packstr(\"Ok\"))"));
+
+        [Fact]
+        public void PackstrMatchesTheGamePacking() =>
+            Assert.Equal(PackedText.Pack("Ok"), TestHost.Eval("packstr(\"Ok\")"));
+
+        [Fact]
+        public void UnpackstrReadsBackWhatADisplayWasGiven() =>
+            Assert.Equal("ABC", Text("unpackstr(" +
+                PackedText.Pack("ABC").ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                ")"));
+
+        // ------------------------------------------------------------------
         //  Memory
         // ------------------------------------------------------------------
 
@@ -432,16 +512,16 @@ namespace IZLang.Tests
         // ------------------------------------------------------------------
 
         [Fact]
-        public void ADevicePropertyDoesNotTakeText() =>
+        public void ADevicePropertyOtherThanSettingDoesNotTakeText() =>
             TestHost.CompileError(
                 "device out = d0;\n" +
-                "fn main() { out.Setting = \"ok\"; }\n",
+                "fn main() { out.On = \"ok\"; }\n",
                 IZErrorCode.TypeMismatch);
 
         [Fact]
-        public void ABatchWriteDoesNotTakeText() =>
+        public void ABatchWriteOtherThanSettingDoesNotTakeText() =>
             TestHost.CompileError(
-                "fn main() { all(StructureWallLight).Setting = \"ok\"; }\n",
+                "fn main() { all(StructureWallLight).Color = \"red\"; }\n",
                 IZErrorCode.TypeMismatch);
 
         [Fact]

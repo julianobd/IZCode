@@ -95,6 +95,13 @@ namespace IZCode.Mod.UI
         public static bool IsActive =>
             Instance != null && Instance._built && Instance._on && Instance._input != null;
 
+        /// <summary>
+        /// Is this the code area's own field? Asked by the key patch, which sees every
+        /// text field in the game and must only take keys away from this one.
+        /// </summary>
+        public static bool Owns(TMP_InputField? field) =>
+            field != null && IsActive && ReferenceEquals(Instance!._input, field);
+
         private TMP_InputField? _input;
         private TextMeshProUGUI? _text;        // the field's text, transparent
         private TextMeshProUGUI? _code;        // the colored copy, on top
@@ -496,6 +503,90 @@ namespace IZCode.Mod.UI
             }
         }
 
+        /// <summary>
+        /// Ctrl+V, as a single edit over the whole clipboard.
+        ///
+        /// TextMeshPro would paste character by character through
+        /// <see cref="Validate"/>, and that filter judges each character on its own:
+        /// a tab became one space, so the indentation of anything copied from a real
+        /// editor collapsed, and every '}' that began its line was refused so it could
+        /// be re-indented on the next frame - which put one of them back and dropped
+        /// the others. Pasted text has already been written by somebody: it comes in
+        /// as it is, with only what the chip cannot store taken out.
+        ///
+        /// Returns true when the paste is ours, whether or not anything was inserted:
+        /// an empty clipboard and a program with no room left are still not something
+        /// to hand back to TextMeshPro.
+        /// </summary>
+        public bool PasteFromClipboard()
+        {
+            if (_input == null) return false;
+
+            string fragment = Sanitize(GUIUtility.systemCopyBuffer);
+            if (fragment.Length == 0) return true;
+
+            int start = Math.Min(SelectionStart, SelectionEnd);
+            int end = Math.Max(SelectionStart, SelectionEnd);
+
+            string text = Text;
+            string updated = text.Substring(0, start) + fragment + text.Substring(end);
+
+            if (updated.Length > MaxFileSize)
+            {
+                IZLog.Warn(IZLogArea.Editor, "paste refused: it would go past " +
+                                             MaxFileSize + " characters");
+                return true;
+            }
+
+            if (CountLines(updated) > MaxLines)
+            {
+                IZLog.Warn(IZLogArea.Editor, "paste refused: it would go past " +
+                                             MaxLines + " lines");
+                return true;
+            }
+
+            int caret = start + fragment.Length;
+            ApplyEdit(new TextEdit(start, end - start, fragment, caret, caret));
+            return true;
+        }
+
+        /// <summary>
+        /// What the chip can store, out of what the clipboard holds: printable ASCII
+        /// and line breaks, with every line ending reduced to one line feed.
+        ///
+        /// A tab becomes a full indentation level rather than the single space the
+        /// game's own editor leaves: text arriving here was written somewhere that
+        /// indents with tabs, and one space per level does not survive the trip.
+        /// </summary>
+        private static string Sanitize(string? clipboard)
+        {
+            if (string.IsNullOrEmpty(clipboard)) return string.Empty;
+
+            var sb = new StringBuilder(clipboard!.Length);
+
+            for (int i = 0; i < clipboard.Length; i++)
+            {
+                char c = clipboard[i];
+
+                if (c == '\r')
+                {
+                    // A Windows line ending and a lone carriage return both end
+                    // exactly one line.
+                    if (i + 1 < clipboard.Length && clipboard[i + 1] == '\n') continue;
+                    sb.Append('\n');
+                    continue;
+                }
+
+                if (c == '\n') { sb.Append('\n'); continue; }
+                if (c == '\t') { sb.Append(' ', IndentEngine.IndentWidth); continue; }
+                if (c < ' ' || c > '~') continue;
+
+                sb.Append(c);
+            }
+
+            return sb.ToString();
+        }
+
         /// <summary>Replaces a range of the source and repositions the caret. Used by completion.</summary>
         public void Replace(int start, int length, string replacement, int caret)
         {
@@ -599,17 +690,32 @@ namespace IZCode.Mod.UI
             {
                 if (IsActive) Remember(Instance!.Text);
 
-                if (_sessionSource == null) return null;
+                if (_sessionSource == null) return Declined("the code area never took this program over");
+
+                string lines = ReadGameLines(out _);
+
+                // Anything else wrote to the lines, so they, not us, are the truth.
+                //
+                // The question is the same one the code area answers when it switches
+                // on, so it is answered in the same place. Asking it here with a rule
+                // of its own - the lines having to match byte for byte - meant that
+                // editing the first line, which is where the marker lives, made the
+                // panel go on showing the whole program while the save fell back to
+                // the game's 128 cut-down lines and threw the rest of it away.
+                if (!SessionSource.KeepsMemory(lines, _sessionCopy))
+                    return Declined("something else wrote to the editor's lines");
+
+                string source = SessionSource.Resolve(lines, _sessionSource, _sessionCopy);
 
                 // Without the marker it is IC10 again, and IC10's limits are the
                 // game's own: let it copy from its 128 lines as it always has.
-                if (!IZChipRuntime.IsIZSource(_sessionSource)) return null;
+                if (!IZChipRuntime.IsIZSource(source)) return Declined("the '#iz' marker is gone");
 
-                // Anything else wrote to the lines, so they, not us, are the truth.
-                if (!string.Equals(ReadGameLines(out _), _sessionCopy, StringComparison.Ordinal))
-                    return null;
+                IZLog.Debug(IZLogArea.Editor,
+                    "export: the IZ program is what leaves the editor - " +
+                    source.Length + " bytes over " + CountLines(source) + " lines");
 
-                return _sessionSource;
+                return source;
             }
             catch (Exception ex)
             {
@@ -617,6 +723,24 @@ namespace IZCode.Mod.UI
                     "could not read the IZ source; the game's lines will answer: " + ex.Message);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Says why the panel is not the one answering, and hands the question back to
+        /// the game.
+        ///
+        /// This is the branch worth watching: the chip is about to be written from the
+        /// game's 128 lines of 90 characters instead of from the program on screen, so
+        /// anything past them does not reach the chip. Every reason is named, because
+        /// "the export did nothing" is otherwise indistinguishable from "the export
+        /// wrote something shorter than what you were looking at".
+        /// </summary>
+        private static string? Declined(string reason)
+        {
+            IZLog.Debug(IZLogArea.Editor,
+                "export: the IZ program was NOT applied (" + reason +
+                "); the chip takes the game's own lines instead");
+            return null;
         }
 
         /// <summary>Stores the program, with the copy the game's lines hold right now.</summary>
@@ -794,9 +918,7 @@ namespace IZCode.Mod.UI
             if (_pendingCloseBrace)
             {
                 _pendingCloseBrace = false;
-                int caret = CaretOffset;
-                var edit = IndentEngine.CloseBrace(Text, caret, caret);
-                ApplyEdit(edit.IsEmpty ? new TextEdit(caret, 0, "}", caret + 1, caret + 1) : edit);
+                ApplyEdit(IndentEngine.OutdentCloseBraceLine(Text, CaretOffset));
             }
 
             if (!_input.isFocused) return;
@@ -825,14 +947,30 @@ namespace IZCode.Mod.UI
             Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
         /// <summary>
+        /// Is this character arriving from Ctrl+V instead of from the keyboard?
+        ///
+        /// TextMeshPro pastes by feeding the clipboard through the input filter one
+        /// character at a time, in the same frame it saw Ctrl+V, so the modifier is
+        /// still down - the same test the Enter and Tab cases rely on.
+        /// </summary>
+        private static bool IsPasting() =>
+            Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) ||
+            Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand);
+
+        /// <summary>
         /// Filters what enters the field.
         ///
-        /// Three keys are rejected here so they can be handled in full in
+        /// Two keys are rejected here so they can be handled in full in
         /// <see cref="HandleKeys"/>, where a multi-character edit is possible: Enter
-        /// (which inherits the indentation), Tab (which shifts the block) and
-        /// <c>}</c> (which outdents the line). The test is <c>Input.GetKey</c> and not a
-        /// flag of our own because the same path serves pasting: a '\n' arriving from
-        /// Ctrl+V has no Enter key held down and goes straight through.
+        /// (which inherits the indentation) and Tab (which shifts the block). The test
+        /// is <c>Input.GetKey</c> and not a flag of our own because the same path serves
+        /// pasting: a '\n' arriving from Ctrl+V has no Enter key held down and goes
+        /// straight through.
+        ///
+        /// A <c>}</c> is never rejected. Its outdent is applied afterwards, over the
+        /// text that already holds it, because TextMeshPro pastes by handing the
+        /// clipboard to this filter one character at a time: refusing every <c>}</c> to
+        /// re-add it on the next frame put exactly one of them back and lost the rest.
         /// </summary>
         private char Validate(string text, int index, char added)
         {
@@ -854,14 +992,13 @@ namespace IZCode.Mod.UI
                     return CountLines(text) >= MaxLines ? '\0' : added;
                 }
 
-                if (added == '}' && !HasSelection)
+                // Only for a brace the player is typing: pasted text arrives with the
+                // indentation it already had, and re-indenting it as it goes by would
+                // fight whoever wrote it.
+                if (added == '}' && !HasSelection && !IsPasting() &&
+                    !IndentEngine.CloseBrace(text, index, index).IsEmpty)
                 {
-                    var edit = IndentEngine.CloseBrace(text, index, index);
-                    if (!edit.IsEmpty)
-                    {
-                        _pendingCloseBrace = true;
-                        return '\0';
-                    }
+                    _pendingCloseBrace = true;
                 }
 
                 int start = IndentEngine.LineStart(text, index);
@@ -1013,7 +1150,18 @@ namespace IZCode.Mod.UI
                 if (info == null) return false;
 
                 int line = CaretLine;
-                if (line < 0 || line >= info.lineCount) return false;
+                if (line < 0) return false;
+
+                // The layout is one frame behind the text on the frame a line is
+                // opened, and the caret is already on a line TMP has not measured yet.
+                // Without this the suggestion list loses its anchor exactly when it is
+                // most wanted - right after Enter.
+                if (line >= info.lineCount)
+                {
+                    _text.ForceMeshUpdate();
+                    info = _text.textInfo;
+                    if (info == null || line >= info.lineCount) return false;
+                }
 
                 var lineInfo = info.lineInfo[line];
                 int column = CaretOffset - IndentEngine.LineStart(Text, CaretOffset);

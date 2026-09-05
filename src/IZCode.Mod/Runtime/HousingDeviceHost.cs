@@ -24,9 +24,16 @@ namespace IZCode.Mod.Runtime
     {
         private readonly ProgrammableChip _chip;
 
-        public HousingDeviceHost(ProgrammableChip chip)
+        /// <summary>
+        /// The names behind the hashes, so a warning can say which prefab and which
+        /// label the program meant instead of two numbers nobody can look up.
+        /// </summary>
+        private readonly HashNames _names;
+
+        public HousingDeviceHost(ProgrammableChip chip, HashNames? names = null)
         {
             _chip = chip;
+            _names = names ?? HashNames.Empty;
         }
 
         /// <summary>
@@ -142,8 +149,8 @@ namespace IZCode.Mod.Runtime
         /// instead of calling the game's, to keep the semantics under our control - in
         /// particular, what happens when nothing matches the filter.
         /// </summary>
-        private static bool Aggregate(List<ILogicable>? devices, int prefabHash, int? nameHash,
-                                      LogicType type, BatchAggregation aggregation, out double value)
+        private bool Aggregate(List<ILogicable>? devices, int prefabHash, int? nameHash,
+                               LogicType type, BatchAggregation aggregation, out double value)
         {
             value = 0.0;
             if (devices == null) return false;
@@ -208,9 +215,9 @@ namespace IZCode.Mod.Runtime
         /// counting as a zero: a tray with no plant in it would otherwise drag an
         /// average down, and 'count' would stop meaning "how many answered".
         /// </summary>
-        private static bool AggregateSlot(List<ILogicable>? devices, int prefabHash, int? nameHash,
-                                          int slotIndex, LogicSlotType type,
-                                          BatchAggregation aggregation, out double value)
+        private bool AggregateSlot(List<ILogicable>? devices, int prefabHash, int? nameHash,
+                                   int slotIndex, LogicSlotType type,
+                                   BatchAggregation aggregation, out double value)
         {
             value = 0.0;
             if (devices == null) return false;
@@ -297,14 +304,14 @@ namespace IZCode.Mod.Runtime
         /// along because it separates the two causes at a glance - wrong prefab (the
         /// network has devices, none matched) from wrong wiring (the network is empty).
         /// </summary>
-        private static void ReportEmptyBatch(string operation, string throttleKey, int networkSize,
-                                             int prefabHash, int? nameHash, string property)
+        private void ReportEmptyBatch(string operation, string throttleKey, int networkSize,
+                                      int prefabHash, int? nameHash, string property)
         {
             if (!IZLog.IsOn(IZLogArea.Vm, IZLogLevel.Warn)) return;
 
             IZLog.Throttled(IZLogArea.Vm, IZLogLevel.Warn, throttleKey, 10f, () =>
-                "batch " + operation + " reached no device: prefab " + prefabHash +
-                (nameHash.HasValue ? " label " + nameHash.Value : string.Empty) +
+                "batch " + operation + " reached no device: " + _names.DescribePrefab(prefabHash) +
+                (nameHash.HasValue ? " " + _names.DescribeLabel(nameHash.Value) : string.Empty) +
                 " property " + property + "; the housing network has " + networkSize +
                 " device(s). Check the prefab name and whether the equipment is on the " +
                 "same data network as the housing.");

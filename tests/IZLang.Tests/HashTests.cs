@@ -226,6 +226,40 @@ namespace IZLang.Tests
         }
 
         // ------------------------------------------------------------------
+        //  Packed text: the other number a str can become
+        // ------------------------------------------------------------------
+        //  A hash identifies a device and never comes back as text. Packed text is
+        //  the opposite: six characters, one per byte, exactly reversible - it is what
+        //  a display shows. Getting the two mixed up is the difference between "Ok" on
+        //  the screen and a nine digit number, so the encoding is pinned here.
+
+        [Theory]
+        [InlineData("O", 0x4F)]
+        [InlineData("Ok", 0x4F6B)]
+        [InlineData("ABC", 0x414243)]
+        public void PackedTextIsOneBytePerCharacter(string text, long expected) =>
+            Assert.Equal((double)expected, PackedText.Pack(text));
+
+        [Theory]
+        [InlineData("O")]
+        [InlineData("Ok")]
+        [InlineData("Status")]
+        [InlineData("a b c ")]
+        public void PackedTextComesBackWhole(string text) =>
+            Assert.Equal(text, PackedText.Unpack(PackedText.Pack(text)));
+
+        [Theory]
+        [InlineData("Standby")]      // seven characters
+        [InlineData("")]             // nothing to show
+        [InlineData("oké")]     // not ASCII: one byte cannot hold it
+        public void WhatADisplayCannotHold(string text) =>
+            Assert.False(PackedText.CanPack(text));
+
+        [Fact]
+        public void AnEmptyReadingIsEmptyText() =>
+            Assert.Equal(string.Empty, PackedText.Unpack(0.0));
+
+        // ------------------------------------------------------------------
         //  Helpers
         // ------------------------------------------------------------------
 

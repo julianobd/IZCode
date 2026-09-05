@@ -114,7 +114,8 @@ namespace IZCode.Mod.Runtime
                 return;
             }
 
-            Vm = new IZVm(Compilation.Program!, new HousingDeviceHost(chip));
+            Vm = new IZVm(Compilation.Program!,
+                          new HousingDeviceHost(chip, new HashNames(Compilation.Program!)));
         }
 
         /// <summary>

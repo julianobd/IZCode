@@ -904,12 +904,14 @@ namespace IZLang.Vm
                 case BuiltinId.Char: result = CharAt(_strings.Read(a), b); break;
                 case BuiltinId.Find: result = Find(_strings.Read(a), _strings.Read(b)); break;
                 case BuiltinId.Parse: result = Parse(_strings.Read(a)); break;
+                case BuiltinId.PackStr: result = PackedText.Pack(_strings.Read(a)); break;
 
                 // These build text instead of a number, so they push it themselves.
                 case BuiltinId.Chr: return PushString(FromCharCode(a));
                 case BuiltinId.Sub: return PushString(Substring(_strings.Read(a), b, c));
                 case BuiltinId.Text: return PushString(FormatNumber(a));
                 case BuiltinId.Fixed: return PushString(FormatFixed(a, b));
+                case BuiltinId.UnpackStr: return PushString(PackedText.Unpack(a));
 
                 default:
                     Fail(RuntimeErrorKind.InvalidInstruction, "unknown builtin: " + (int)id);

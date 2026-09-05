@@ -139,6 +139,40 @@ namespace IZLang.Editor
             return new TextEdit(lineStart, selectionEnd - lineStart, replacement, caret, caret);
         }
 
+        /// <summary>
+        /// The same outdent, for a <c>}</c> that has already been inserted.
+        ///
+        /// <see cref="CloseBrace"/> decides before the character enters the text, which
+        /// only works when the editor can refuse it. A text field that inserts on its
+        /// own - and pasting goes through exactly that path - has to be corrected
+        /// afterwards instead, and dropping the character to re-add it later is how a
+        /// paste loses its braces.
+        ///
+        /// Returns <see cref="TextEdit.None"/> unless the caret sits right after a
+        /// <c>}</c> that is alone on its line with only whitespace in front of it.
+        /// </summary>
+        public static TextEdit OutdentCloseBraceLine(string? text, int caret)
+        {
+            string source = text ?? string.Empty;
+            if (caret < 0) caret = 0;
+            if (caret > source.Length) caret = source.Length;
+
+            int lineStart = LineStart(source, caret);
+            string before = source.Substring(lineStart, caret - lineStart);
+
+            if (before.Length < 2 || before[before.Length - 1] != '}') return TextEdit.None;
+
+            string indent = before.Substring(0, before.Length - 1);
+            if (indent.Trim().Length != 0) return TextEdit.None;
+
+            int width = PreviousStop(indent.Length);
+            if (width == indent.Length) return TextEdit.None;
+
+            string replacement = new string(' ', width) + "}";
+            int position = lineStart + replacement.Length;
+            return new TextEdit(lineStart, before.Length, replacement, position, position);
+        }
+
         // ------------------------------------------------------------------
         //  Tab / Shift+Tab
         // ------------------------------------------------------------------
