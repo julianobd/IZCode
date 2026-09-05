@@ -1,18 +1,18 @@
 #iz
-// A hydroponics farm of any size, on no pins at all.
+// An Automated Hydroponics farm of any size, on no pins at all.
 //
-// Every tray carries a label, and its flip-cover switch, its flip switch, its
+// Every unit carries a label, and its flip-cover switch, its flip switch, its
 // status light and its chute splitter carry the same one. That label is the
-// address of the whole set, so adding a tray is adding a line to setup().
+// address of the whole set, so adding a unit is adding a line to setup().
 //
-// Two switches decide what each tray does:
+// Two switches decide what each unit does:
 //
-//   flip cover ("seeds")  off: harvest as soon as the plant is mature
-//                          on: wait until it is seeding, so seeds come out too
+//   flip cover ("seeds")  off: harvest at maturity, which yields fruit only
+//                          on: wait for seeding, which yields the seed instead
 //   flip switch ("replant") off: send the harvest down the chute
-//                            on: route it back, to plant the tray again
+//                            on: route it back, to plant the unit again
 
-const MaxTrays = 16;
+const MaxUnits = 16;
 
 const AutoHydro  = #"StructureHydroponicsAutomated";
 const FlipCover  = #"ModularDeviceFlipCoverSwitch";
@@ -22,30 +22,39 @@ const Splitter   = #"StructureChuteDigitalFlipFlopSplitterRight";
 const SunSensor  = #"StructureDaylightSensor";
 const SunLabel   = #"Daylight Sensor";
 
-// The slot the plant grows in. Check it on the tray's Stationpedia page before
-// trusting it: a Harvie keeps its arm in slot 0 and reaches the plant through
-// the Target Slot at index 255 instead.
+// An Automated Hydroponics keeps four slots: 0 the plant, 1 the export, 2 the
+// import the seed arrives through, and 3 the fertiliser. Only slot 0 answers
+// Mature, Seeding and Growth, and it answers -1 rather than 0 while the tray is
+// empty, which is why the test below is '> 0' and not '== 1'.
 const PlantSlot = 0;
 
 // How much of the harvest the splitter lets through before it flips.
 const SeedsBack = 20;
 
-struct Tray {
-    label:   num;
-    seeds:   bool;
-    replant: bool;
+struct Hydro {
+    label:      num;
+    seeds:      bool;
+    replant:    bool;
+
+    // Latched once a harvest starts, cleared when the tray comes up empty.
+    harvesting: bool;
+
+    // The 'replant' setting the splitter was last configured for, so the ratio
+    // is written on a change and never again. -1 means "not configured yet".
+    routed:     num;
 }
 
 // The farm itself. It lives outside main, so it is filled once and kept across
 // every tick instead of being rebuilt on each lap.
-var farm: list Tray[MaxTrays];
+var farm: list Hydro[MaxUnits];
 
-fn addTray(label: num) {
-    var tray: Tray;
-    tray.label = label;
+fn addUnit(label: num) {
+    var unit: Hydro;
+    unit.label = label;
+    unit.routed = -1;
 
-    if !farm.add(tray) {
-        // The list is full: raise MaxTrays rather than losing a tray silently.
+    if !farm.add(unit) {
+        // The list is full: raise MaxUnits rather than losing a unit silently.
         return;
     }
 
@@ -53,54 +62,69 @@ fn addTray(label: num) {
 }
 
 fn setup() {
-    addTray(#"AHydroponics1");
-    addTray(#"AHydroponics2");
-    addTray(#"AHydroponics3");
-    addTray(#"AHydroponics4");
-    addTray(#"AHydroponics5");
-    addTray(#"AHydroponics6");
-    addTray(#"AHydroponics7");
-    addTray(#"AHydroponics8");
-    addTray(#"AHydroponics9");
-    addTray(#"AHydroponics10");
-    addTray(#"AHydroponics11");
-    addTray(#"AHydroponics12");
+    addUnit(#"AHydroponics1");
+    addUnit(#"AHydroponics2");
+    addUnit(#"AHydroponics3");
+    addUnit(#"AHydroponics4");
+    addUnit(#"AHydroponics5");
+    addUnit(#"AHydroponics6");
+    addUnit(#"AHydroponics7");
+    addUnit(#"AHydroponics8");
+    addUnit(#"AHydroponics9");
+    addUnit(#"AHydroponics10");
+    addUnit(#"AHydroponics11");
+    addUnit(#"AHydroponics12");
 }
 
 // Red none, blue seeds, yellow replant, green both.
-fn statusColor(tray: Tray) -> num {
-    if tray.seeds { return tray.replant ? Color.Green : Color.Blue; }
-    return tray.replant ? Color.Yellow : Color.Red;
+fn statusColor(unit: Hydro) -> num {
+    if unit.seeds { return unit.replant ? Color.Green : Color.Blue; }
+    return unit.replant ? Color.Yellow : Color.Red;
 }
 
-// The chute splitter only depends on where the harvest is meant to go, so the
-// whole configuration follows from one switch. Writing it every tick would be
-// pointless network traffic, so it is read back first - and both halves have to
-// be checked: a splitter that has never been set reads SettingOutput 0, which is
-// also what the pass-through configuration wants.
-fn routeHarvest(tray: Tray) {
-    var mode = tray.replant ? 0 : 1;
-    var output = tray.replant ? SeedsBack : 0;
+// The splitter counts items out of one side, then flips to the other by itself:
+// Setting 1 and SettingOutput 20 send one seed back to the import for every 20
+// that go down the chute. Mode is its own running state, flipped on every item
+// that passes, so it is written once and never corrected - forcing it each tick
+// would drag the splitter back mid-cycle and destroy the ratio.
+//
+// With both counts 0 it never flips, which is how 'everything down the chute' is
+// expressed: Mode 1, and no count to move it off that side.
+//
+// What the splitter reads back cannot say whether it is configured, because a
+// fresh one reads 0 and 0, which is also the pass-through setting. So the unit
+// remembers what it wrote instead.
+fn routeHarvest(unit: Hydro) {
+    var wanted = unit.replant ? 1 : 0;
+    if unit.routed == wanted { return; }
 
-    if named(Splitter, tray.label).Mode == mode &&
-       named(Splitter, tray.label).SettingOutput == output {
-        return;
-    }
-
-    named(Splitter, tray.label).Mode = mode;
-    named(Splitter, tray.label).Setting = tray.replant ? 1 : 0;
-    named(Splitter, tray.label).SettingOutput = output;
+    named(Splitter, unit.label).Setting = unit.replant ? 1 : 0;
+    named(Splitter, unit.label).SettingOutput = unit.replant ? SeedsBack : 0;
+    named(Splitter, unit.label).Mode = unit.replant ? 0 : 1;
+    unit.routed = wanted;
 }
 
-// A slot read on a selector reaches the tray without spending a pin, which is
-// what lets this run on twelve trays instead of six. Only the branch a ternary
-// takes is evaluated, so this is one read, not two.
-fn cropIsReady(tray: Tray) -> bool {
-    var reading = tray.seeds
-        ? named(AutoHydro, tray.label).slot[PlantSlot].Seeding
-        : named(AutoHydro, tray.label).slot[PlantSlot].Mature;
+// When a harvest may START. A slot read on a selector reaches the unit without
+// spending a pin, which is what lets this run on twelve of them instead of six.
+// Only the branch a ternary takes is evaluated, so this is one read, not two.
+fn cropIsReady(unit: Hydro) -> bool {
+    var reading = unit.seeds
+        ? named(AutoHydro, unit.label).slot[PlantSlot].Seeding
+        : named(AutoHydro, unit.label).slot[PlantSlot].Mature;
 
     return reading > 0;
+}
+
+// Whether anything is still on the plant. Each reading is -1 with no plant at
+// all, 0 while it is growing, and 1 when it is carrying something.
+//
+// This is what says a harvest is finished, and the tray emptying is not: a
+// perennial like a tomato is never destroyed. It resets to the stage just before
+// maturity and keeps the tray occupied, so a run that waited for an empty tray
+// would pulse Harvest at it for the whole regrowth.
+fn cropHasMore(unit: Hydro) -> bool {
+    if named(AutoHydro, unit.label).slot[PlantSlot].Mature > 0 { return true; }
+    return named(AutoHydro, unit.label).slot[PlantSlot].Seeding > 0;
 }
 
 fn main() {
@@ -110,24 +134,38 @@ fn main() {
         var sunIsUp = named(SunSensor, SunLabel).Activate;
 
         for i in 0..farm.count {
-            var tray = farm[i];                  // the cells in the list, not a copy
-            var label = tray.label;
+            var unit = farm[i];                  // the cells in the list, not a copy
+            var label = unit.label;
 
-            tray.seeds = named(FlipCover, label).On > 0;
-            tray.replant = named(FlipSwitch, label).On > 0;
+            unit.seeds = named(FlipCover, label).On > 0;
+            unit.replant = named(FlipSwitch, label).On > 0;
 
             named(AutoHydro, label).On = sunIsUp;
-            named(StatusLed, label).Color = statusColor(tray);
+            named(StatusLed, label).Color = statusColor(unit);
 
-            routeHarvest(tray);
+            routeHarvest(unit);
 
-            // Both of these are pulses: the tray ignores them when it has nothing
-            // to do, and the next lap asks again. Nothing here waits on the tray,
-            // so one stuck plant cannot hold up the other eleven.
+            // One harvest takes one item off the plant, so the switch decides
+            // when to START and the run carries on until nothing is left. Taking
+            // the seed drops the plant back to Mature 1 / Seeding 0 with the
+            // fruit still on it, and it will not seed again until it has been
+            // stripped - without the latch a unit set to keep seeds would take
+            // one seed and then wait forever.
+            //
+            // Repeating is safe: the unit refuses both while the arm is moving
+            // and while the export is still leaving. Nothing here blocks, so a
+            // stuck unit cannot hold up the other eleven.
             if named(AutoHydro, label).slot[PlantSlot].Occupied == 0 {
+                unit.harvesting = false;
                 named(AutoHydro, label).Plant = 1;
-            } else if cropIsReady(tray) {
-                named(AutoHydro, label).Harvest = 1;
+            } else {
+                if unit.harvesting {
+                    if !cropHasMore(unit) { unit.harvesting = false; }
+                } else if cropIsReady(unit) {
+                    unit.harvesting = true;
+                }
+
+                if unit.harvesting { named(AutoHydro, label).Harvest = 1; }
             }
         }
 
