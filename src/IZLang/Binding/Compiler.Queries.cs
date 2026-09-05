@@ -274,13 +274,13 @@ namespace IZLang.Binding
             int line = LineOf(source.Span);
 
             // 'pump.Pressure.sum()' - the mode only exists when the game does the
-            // reading, and a pin hands over one value with nothing to collapse.
-            if (member.Target is NameExpression pinName &&
-                _scope.LookupNoUse(pinName.Name) is DeviceSymbol pinDevice && !pinDevice.IsBatch &&
-                BatchTerminals.ContainsKey(steps[0].Name))
+            // reading, and a pin hands over one value with nothing to collapse. The
+            // same goes for 'pump.slot[0].Quantity.sum()'.
+            var pinDevice = SingleDeviceBehind(member);
+            if (pinDevice != null && BatchTerminals.ContainsKey(steps[0].Name))
             {
                 _diagnostics.Report(IZErrorCode.TypeMismatch, steps[0].Span,
-                    "'" + steps[0].Name + "' collapses a batch read, and '" + pinName.Name +
+                    "'" + steps[0].Name + "' collapses a batch read, and '" + pinDevice.Name +
                     "' is a single device on pin " + DevicePins.Name(pinDevice.Pin));
                 Emit(OpCode.PushZero, 0, 0, line);
                 return true;
@@ -316,20 +316,51 @@ namespace IZLang.Binding
         }
 
         /// <summary>
-        /// Is this member read a batch read - 'all(X).Power', or 'lights.Power' over a
-        /// name declared from a selector? Only those can carry a terminal.
+        /// Is this member read a batch read - 'all(X).Power', 'lights.Power' over a
+        /// name declared from a selector, or either of those through a slot? Only
+        /// those can carry a terminal.
         /// </summary>
         private bool IsBatchMemberRead(MemberExpression member)
         {
             if (member.Target is BatchSelectorExpression) return true;
 
+            if (member.Target is IndexExpression indexed && IsDeviceSlotAccess(indexed))
+                return SingleDeviceBehind(member) == null;
+
             return member.Target is NameExpression name &&
                    _scope.LookupNoUse(name.Name) is DeviceSymbol device && device.IsBatch;
+        }
+
+        /// <summary>
+        /// The pin this read goes to, when it goes to exactly one device - directly
+        /// ('pump.Pressure') or through a slot ('pump.slot[0].Quantity'). null when the
+        /// read reaches a set, which is what a terminal needs.
+        /// </summary>
+        private DeviceSymbol? SingleDeviceBehind(MemberExpression member)
+        {
+            var target = member.Target;
+
+            if (target is IndexExpression indexed &&
+                indexed.Target is MemberExpression slotMember &&
+                string.Equals(slotMember.MemberName, "slot", StringComparison.Ordinal))
+            {
+                target = slotMember.Target;
+            }
+
+            return target is NameExpression name &&
+                   _scope.LookupNoUse(name.Name) is DeviceSymbol device && !device.IsBatch
+                ? device
+                : null;
         }
 
         private IZType EmitBatchMemberRead(MemberExpression member, BatchAggregation aggregation,
                                            int line)
         {
+            // The slot form resolves its property against LogicSlotType instead, so it
+            // has to branch off before the LogicType lookup below.
+            if (member.Target is IndexExpression indexed && IsDeviceSlotAccess(indexed))
+                return EmitBatchSlotMemberRead(member, aggregation, line);
+
             if (!TryResolveLogicType(member, out int logicType))
             {
                 Emit(OpCode.PushZero, 0, 0, line);
@@ -344,6 +375,11 @@ namespace IZLang.Binding
 
             return IZType.Num;
         }
+
+        /// <summary>'named(X, y).slot[0].Mature.count()' - the slot form of the same read.</summary>
+        private IZType EmitBatchSlotMemberRead(MemberExpression member, BatchAggregation aggregation,
+                                               int line) =>
+            EmitSlotRead((IndexExpression)member.Target, member, line, aggregation);
 
         private IZType EmitQuery(ExpressionSyntax source, List<QueryStep> steps)
         {

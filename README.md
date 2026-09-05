@@ -226,6 +226,22 @@ An empty batch gives `0` for all of them - `min()` included, which is `0` and
 not infinity. `count()` is the one that still answers, so it is what separates
 "nothing on the network" from "everything reading zero". See `samples/solar.iz`.
 
+A slot reads across a batch the same way, which is what lets a program watch the
+same slot on more devices than the housing has pins:
+
+```iz
+device trays = named(StructureHydroponicsAutomated, #"north");
+
+var ripe  = trays.slot[0].Mature.max();        // 1 as soon as one of them is ready
+var grown = trays.slot[0].Mature.count();      // how many trays answered at all
+```
+
+A device that has no slot at that index, or whose slot cannot answer that
+property, is skipped instead of counting as a zero: an empty tray would
+otherwise drag the average down, and `count()` would stop meaning "how many
+answered". A slot stays read only, on a pin and on a batch alike. See
+`samples/hydroponics.iz`.
+
 What a selector saves is pins, not cabling. It reaches the devices on the same
 data network as the housing, exactly as a pin does, so the data cable still has
 to get there; what it drops is having to register each device in one of the six
@@ -240,8 +256,8 @@ offered.
 Because a device is a fixed place in the world, both operands have to be known
 at compile time: a prefab name, a hash literal, a `const`, or text joined from
 them. A selector built from a running value is written where it is used, in the
-inline form. And two things a pin can do it cannot: `+=` on a property (a batch
-has no single value to read back) and `slot[i]` (a slot belongs to one device).
+inline form. And one thing a pin can do it cannot: `+=` on a property, because a
+batch has no single value to read back.
 
 See `samples/named-devices.iz`.
 

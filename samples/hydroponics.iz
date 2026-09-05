@@ -1,0 +1,136 @@
+#iz
+// A hydroponics farm of any size, on no pins at all.
+//
+// Every tray carries a label, and its flip-cover switch, its flip switch, its
+// status light and its chute splitter carry the same one. That label is the
+// address of the whole set, so adding a tray is adding a line to setup().
+//
+// Two switches decide what each tray does:
+//
+//   flip cover ("seeds")  off: harvest as soon as the plant is mature
+//                          on: wait until it is seeding, so seeds come out too
+//   flip switch ("replant") off: send the harvest down the chute
+//                            on: route it back, to plant the tray again
+
+const MaxTrays = 16;
+
+const AutoHydro  = #"StructureHydroponicsAutomated";
+const FlipCover  = #"ModularDeviceFlipCoverSwitch";
+const FlipSwitch = #"ModularDeviceFlipSwitch";
+const StatusLed  = #"ModularDeviceLightSmall";
+const Splitter   = #"StructureChuteDigitalFlipFlopSplitterRight";
+const SunSensor  = #"StructureDaylightSensor";
+const SunLabel   = #"Daylight Sensor";
+
+// The slot the plant grows in. Check it on the tray's Stationpedia page before
+// trusting it: a Harvie keeps its arm in slot 0 and reaches the plant through
+// the Target Slot at index 255 instead.
+const PlantSlot = 0;
+
+// How much of the harvest the splitter lets through before it flips.
+const SeedsBack = 20;
+
+struct Tray {
+    label:   num;
+    seeds:   bool;
+    replant: bool;
+}
+
+// The farm itself. It lives outside main, so it is filled once and kept across
+// every tick instead of being rebuilt on each lap.
+var farm: list Tray[MaxTrays];
+
+fn addTray(label: num) {
+    var tray: Tray;
+    tray.label = label;
+
+    if !farm.add(tray) {
+        // The list is full: raise MaxTrays rather than losing a tray silently.
+        return;
+    }
+
+    named(Splitter, label).On = 1;
+}
+
+fn setup() {
+    addTray(#"AHydroponics1");
+    addTray(#"AHydroponics2");
+    addTray(#"AHydroponics3");
+    addTray(#"AHydroponics4");
+    addTray(#"AHydroponics5");
+    addTray(#"AHydroponics6");
+    addTray(#"AHydroponics7");
+    addTray(#"AHydroponics8");
+    addTray(#"AHydroponics9");
+    addTray(#"AHydroponics10");
+    addTray(#"AHydroponics11");
+    addTray(#"AHydroponics12");
+}
+
+// Red none, blue seeds, yellow replant, green both.
+fn statusColor(tray: Tray) -> num {
+    if tray.seeds { return tray.replant ? Color.Green : Color.Blue; }
+    return tray.replant ? Color.Yellow : Color.Red;
+}
+
+// The chute splitter only depends on where the harvest is meant to go, so the
+// whole configuration follows from one switch. Writing it every tick would be
+// pointless network traffic, so it is read back first - and both halves have to
+// be checked: a splitter that has never been set reads SettingOutput 0, which is
+// also what the pass-through configuration wants.
+fn routeHarvest(tray: Tray) {
+    var mode = tray.replant ? 0 : 1;
+    var output = tray.replant ? SeedsBack : 0;
+
+    if named(Splitter, tray.label).Mode == mode &&
+       named(Splitter, tray.label).SettingOutput == output {
+        return;
+    }
+
+    named(Splitter, tray.label).Mode = mode;
+    named(Splitter, tray.label).Setting = tray.replant ? 1 : 0;
+    named(Splitter, tray.label).SettingOutput = output;
+}
+
+// A slot read on a selector reaches the tray without spending a pin, which is
+// what lets this run on twelve trays instead of six. Only the branch a ternary
+// takes is evaluated, so this is one read, not two.
+fn cropIsReady(tray: Tray) -> bool {
+    var reading = tray.seeds
+        ? named(AutoHydro, tray.label).slot[PlantSlot].Seeding
+        : named(AutoHydro, tray.label).slot[PlantSlot].Mature;
+
+    return reading > 0;
+}
+
+fn main() {
+    setup();
+
+    loop {
+        var sunIsUp = named(SunSensor, SunLabel).Activate;
+
+        for i in 0..farm.count {
+            var tray = farm[i];                  // the cells in the list, not a copy
+            var label = tray.label;
+
+            tray.seeds = named(FlipCover, label).On > 0;
+            tray.replant = named(FlipSwitch, label).On > 0;
+
+            named(AutoHydro, label).On = sunIsUp;
+            named(StatusLed, label).Color = statusColor(tray);
+
+            routeHarvest(tray);
+
+            // Both of these are pulses: the tray ignores them when it has nothing
+            // to do, and the next lap asks again. Nothing here waits on the tray,
+            // so one stuck plant cannot hold up the other eleven.
+            if named(AutoHydro, label).slot[PlantSlot].Occupied == 0 {
+                named(AutoHydro, label).Plant = 1;
+            } else if cropIsReady(tray) {
+                named(AutoHydro, label).Harvest = 1;
+            }
+        }
+
+        yield;
+    }
+}

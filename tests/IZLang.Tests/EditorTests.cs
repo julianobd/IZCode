@@ -401,6 +401,17 @@ namespace IZLang.Tests
         }
 
         [Fact]
+        public void AnInlineSelectorOffersItsSlotPropertiesToo()
+        {
+            var result = Complete(
+                "fn main() { var q = named(StructureChuteInlet, \"north\").slot[0].| }\n",
+                Environment());
+
+            Assert.Equal(CompletionContext.SlotProperty, result.Context);
+            Assert.Equal(new[] { "Quantity" }, Labels(result));
+        }
+
+        [Fact]
         public void HoverOnASelectorDeviceNamesTheEquipment()
         {
             var environment = Environment();

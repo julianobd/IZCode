@@ -401,17 +401,23 @@ namespace IZLang.Editor
                     depth--;
                     if (depth != 0) continue;
 
-                    // '[' ... before it we expect  <name> . slot
+                    // '[' ... before it we expect  <name> . slot  or  named(...) . slot
                     if (i >= 3 &&
                         tokens[i - 1].Kind == TokenKind.Identifier &&
-                        tokens[i - 2].Kind == TokenKind.Dot &&
-                        tokens[i - 3].Kind == TokenKind.Identifier)
+                        tokens[i - 2].Kind == TokenKind.Dot)
                     {
-                        var symbol = DeclarationScanner.Find(declarations, tokens[i - 3].Text);
-                        if (symbol != null && symbol.Kind == DeclaredKind.Device)
+                        if (tokens[i - 3].Kind == TokenKind.Identifier)
                         {
-                            pin = symbol.Pin;
-                            selector = symbol.Selector;
+                            var symbol = DeclarationScanner.Find(declarations, tokens[i - 3].Text);
+                            if (symbol != null && symbol.Kind == DeclaredKind.Device)
+                            {
+                                pin = symbol.Pin;
+                                selector = symbol.Selector;
+                            }
+                        }
+                        else if (tokens[i - 3].Kind == TokenKind.RParen)
+                        {
+                            selector = FindSelector(tokens, i - 3);
                         }
                     }
                     return;

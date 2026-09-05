@@ -1256,6 +1256,17 @@ namespace IZLang.Binding
 
         private void EmitMemberAssignment(MemberExpression member, AssignmentStatement assignment, int line)
         {
+            // chute.slot[0].Quantity = 1 - a slot says what the device is holding; it
+            // is not a setting, on a pin or on a batch.
+            if (member.Target is IndexExpression slotTarget && IsDeviceSlotAccess(slotTarget))
+            {
+                _diagnostics.Report(IZErrorCode.InvalidAssignmentTarget, assignment.Target.Span,
+                    "a device slot is read only");
+                EmitExpression(assignment.Value);
+                Emit(OpCode.Pop, 0, 0, line);
+                return;
+            }
+
             // pump.On = ...
             if (member.Target is NameExpression targetName &&
                 _scope.Lookup(targetName.Name) is DeviceSymbol device)
@@ -2299,13 +2310,14 @@ namespace IZLang.Binding
 
         /// <summary>
         /// Is this 'device.slot[i]'? Only then does indexing mean a slot; anything
-        /// else with brackets is an array.
+        /// else with brackets is an array. The device may be a pin, a name declared
+        /// from a selector, or a selector written where it is used.
         /// </summary>
         private bool IsDeviceSlotAccess(IndexExpression index) =>
             index.Target is MemberExpression member &&
             string.Equals(member.MemberName, "slot", StringComparison.Ordinal) &&
-            member.Target is NameExpression name &&
-            _scope.LookupNoUse(name.Name) is DeviceSymbol;
+            (member.Target is BatchSelectorExpression ||
+             (member.Target is NameExpression name && _scope.LookupNoUse(name.Name) is DeviceSymbol));
 
         /// <summary>
         /// Emits the address of a struct field, leaving it on the stack.
@@ -2432,27 +2444,22 @@ namespace IZLang.Binding
             return element;
         }
 
-        private IZType EmitSlotRead(IndexExpression indexed, MemberExpression member, int line)
+        /// <summary>
+        /// Reads 'x.slot[i].Property'.
+        ///
+        /// Over a pin that is one reading. Over a selector it is the same sequence a
+        /// batch property read gives - one reading per device that has that slot - and
+        /// <paramref name="aggregation"/> says which of the game's five modes collapses
+        /// it. That is what lets a program watch the same slot on more trays than the
+        /// housing has pins.
+        /// </summary>
+        private IZType EmitSlotRead(IndexExpression indexed, MemberExpression member, int line,
+                                    BatchAggregation aggregation = BatchAggregation.Average)
         {
-            if (!(indexed.Target is MemberExpression slotMember) ||
-                !string.Equals(slotMember.MemberName, "slot", StringComparison.Ordinal) ||
-                !(slotMember.Target is NameExpression deviceName) ||
-                !(_scope.Lookup(deviceName.Name) is DeviceSymbol device))
+            if (!TryResolveSlotSource(indexed, out var device, out var selector))
             {
                 _diagnostics.Report(IZErrorCode.NotADevice, indexed.Span,
                     "indexing only works in the form 'device.slot[i].Property'");
-                Emit(OpCode.PushZero, 0, 0, line);
-                return IZType.Error;
-            }
-
-            // A slot belongs to one device. A batch selector reaches a set of them,
-            // and the game has no instruction that reads a slot across a set.
-            if (device.IsBatch)
-            {
-                _diagnostics.Report(IZErrorCode.NotADevice, indexed.Span,
-                    "'" + device.Name + "' is " + device.Description +
-                    ", which reaches several devices; a slot belongs to one, so read it " +
-                    "through a device on a pin");
                 Emit(OpCode.PushZero, 0, 0, line);
                 return IZType.Error;
             }
@@ -2465,11 +2472,56 @@ namespace IZLang.Binding
                 return IZType.Error;
             }
 
+            // The selector operands go first, the slot index last: that is the order
+            // the batch instructions pop them in.
+            if (selector != null) EmitBatchSelectorOperands(selector, line);
+            else if (device!.IsBatch) EmitDeviceSelectorOperands(device, line);
+
             var indexType = EmitExpression(indexed.Index);
             RequireNumeric(indexType, indexed.Index.Span, "the slot index");
 
-            Emit(OpCode.DeviceSlotLoad, device.Pin, slotLogicType, line);
+            bool named = selector != null
+                ? selector.Kind != BatchSelectorKind.All
+                : device!.HasLabel;
+
+            if (selector != null || device!.IsBatch)
+                Emit(named ? OpCode.BatchNamedSlotLoad : OpCode.BatchSlotLoad,
+                     slotLogicType, (int)aggregation, line);
+            else
+                Emit(OpCode.DeviceSlotLoad, device.Pin, slotLogicType, line);
+
             return IZType.Num;
+        }
+
+        /// <summary>
+        /// What a 'x.slot[i]' reads from: a device name (a pin or a selector given a
+        /// name), or a selector written where it is used. Exactly one of the two
+        /// outputs is set when this answers true.
+        /// </summary>
+        private bool TryResolveSlotSource(IndexExpression indexed, out DeviceSymbol? device,
+                                          out BatchSelectorExpression? selector)
+        {
+            device = null;
+            selector = null;
+
+            if (!(indexed.Target is MemberExpression slotMember) ||
+                !string.Equals(slotMember.MemberName, "slot", StringComparison.Ordinal))
+                return false;
+
+            if (slotMember.Target is BatchSelectorExpression inline)
+            {
+                selector = inline;
+                return true;
+            }
+
+            if (slotMember.Target is NameExpression deviceName &&
+                _scope.Lookup(deviceName.Name) is DeviceSymbol resolved)
+            {
+                device = resolved;
+                return true;
+            }
+
+            return false;
         }
 
         private IZType EmitIndexRead(IndexExpression index)

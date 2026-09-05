@@ -2,7 +2,7 @@
 <ModMetadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Name>IZCode</Name>
   <Author>julianobd</Author>
-  <Version>0.1.6</Version>
+  <Version>0.1.7</Version>
   <ModID>izcode</ModID>
   <Description>[h1]IZCode - Structured Programming for Stationeers[/h1]
 
@@ -303,42 +303,18 @@ Every client and the server need the mod installed.
   <ChangeLog>
 ===== 0.1.6 =========================================================
 
-- Added the ternary operator, 'c ? a : b', which picks one of two values in one
-  line. This is IC10's 'select', and the only instruction that had no shape at
-  all in IZ: the same choice used to cost a var, an if, an else, and a name that
-  only had to be mutable so both branches could reach it. It is an expression,
-  so it goes anywhere a value goes, including into a device property and into
-  the argument of a call. The condition is a bool, as in 'if'; the two sides
-  have to be the same type, num, bool or str, and never an array, a list or a
-  struct, since those are addresses into the heap; and only the branch taken is
-  evaluated, so a device read on the side not chosen never happens. It binds
-  weaker than every other operator and it is right associative, so a chain like
-  'p &lt; LOW ? 1 : p &gt; HIGH ? 3 : 2' reads as nested without parentheses. Writing
-  '?' without its ':' draws one error that names the shape, not a cascade. See
-  'samples/ternary.iz'.
-
-- Added 'isset(dev)', which answers whether a pin has a device on it right now.
-  A program can drive whatever is wired instead of stopping on an empty pin: the
-  suit script that only touches the helmet when one is worn, the routine over six
-  optional pins. It takes a device declared with 'device', a pin written straight
-  into the call - 'isset(d3)' - and 'db', the device the chip is installed in; a
-  name standing for 'all(...)' or 'named(...)' reaches a set rather than a pin
-  and is refused at compile time. Reading an empty pin still stops the program
-  and lights the housing LED, which is the right answer for a cable somebody will
-  plug in. This is IC10's 'sdse'. See 'samples/optional-devices.iz'.
-
-- Batch reads now answer in the five modes the game has, not only the average. A
-  batch property is the sequence of readings of every device the selector matched,
-  and used bare it still means '.avg()'; written after it, 'sum()', 'min()',
-  'max()' and 'count()' collapse that sequence another way. They work on the
-  inline selector and on a name declared from one - 'all(X).Power.sum()' and
-  'panels.Charge.min()' - take no argument, and pick which of the game's batch
-  methods travels in the instruction, so the chain costs the single read the bare
-  property costs. An empty batch gives 0 for all of them, 'min()' included, which
-  is 0 and not infinity; 'count()' is the one that still answers, and it is what
-  tells "nothing on the network" from "everything reading zero". The editor
-  offers the five after 'all(X).Power.', and hovering the chain shows the value
-  under the mode that was written. See 'samples/solar.iz'.
+- A slot can now be read across a batch: 'named(StructureHydroponicsAutomated,
+  #"north").slot[0].Mature.max()'. Until now a slot could only be read through a
+  pin, so a program could watch at most six trays, chutes or lockers no matter
+  how many were on the network. The batch form behaves exactly like a batch
+  property: the sequence of readings of every matched device, with the same five
+  terminals, and '.avg()' when none is written. A device that has no slot at that
+  index, or whose slot cannot answer that property, is skipped instead of
+  counting as a zero, so an empty tray does not drag the average down and
+  'count()' keeps meaning "how many answered". A selector that matches nothing
+  reads 0, like every other batch read, where an empty pin still stops the chip.
+  A slot stays read only in both forms. This is IC10's 'lbs' and 'lbns'. See
+  'samples/hydroponics.iz'.
   </ChangeLog>
   <WorkshopHandle>3791654571</WorkshopHandle>
   <Tags>

@@ -104,6 +104,16 @@ namespace IZLang.Vm
         BatchNamedLoad,
         /// <summary>Named batch write: value on top, name hash below it, LogicType A.</summary>
         BatchNamedStore,
+        /// <summary>
+        /// Batch slot read: slot index on top, prefab hash below it, LogicSlotType A,
+        /// aggregation mode B. The slot counterpart of <see cref="BatchLoad"/>.
+        /// </summary>
+        BatchSlotLoad,
+        /// <summary>
+        /// Named batch slot read: slot index on top, name hash below it, prefab hash
+        /// below that, LogicSlotType A, aggregation mode B.
+        /// </summary>
+        BatchNamedSlotLoad,
 
         // ---- heap: arrays and structs ----
 

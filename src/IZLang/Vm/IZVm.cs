@@ -458,6 +458,30 @@ namespace IZLang.Vm
                         _host.BatchNamedWrite(prefabHash, nameHash, instruction.A, value);
                         break;
                     }
+                    case OpCode.BatchSlotLoad:
+                    {
+                        if (_stackTop < 2) return Underflow();
+                        int slotIndex = (int)_stack[--_stackTop];
+                        double prefabHash = _stack[--_stackTop];
+                        // Like every batch read: nothing matched is 0, not a stop. The
+                        // pin form errors because an empty pin is a wiring mistake; a
+                        // selector that matches nothing is an ordinary answer.
+                        _host.TryBatchSlotRead(prefabHash, slotIndex, instruction.A,
+                                               (BatchAggregation)instruction.B, out double value);
+                        if (!Push(value)) return State;
+                        break;
+                    }
+                    case OpCode.BatchNamedSlotLoad:
+                    {
+                        if (_stackTop < 3) return Underflow();
+                        int slotIndex = (int)_stack[--_stackTop];
+                        double nameHash = _stack[--_stackTop];
+                        double prefabHash = _stack[--_stackTop];
+                        _host.TryBatchNamedSlotRead(prefabHash, nameHash, slotIndex, instruction.A,
+                                                    (BatchAggregation)instruction.B, out double value);
+                        if (!Push(value)) return State;
+                        break;
+                    }
 
                     // ---- heap: arrays and structs ----
                     case OpCode.NewAggregate:

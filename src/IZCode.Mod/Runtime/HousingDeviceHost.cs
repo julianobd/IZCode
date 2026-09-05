@@ -176,7 +176,72 @@ namespace IZCode.Mod.Runtime
             {
                 if (aggregation == BatchAggregation.Count) return true;
 
-                ReportEmptyBatch("read", "batch-read-empty", devices.Count, prefabHash, nameHash, type);
+                ReportEmptyBatch("read", "batch-read-empty", devices.Count, prefabHash, nameHash,
+                                 type.ToString());
+                return false;
+            }
+
+            switch (aggregation)
+            {
+                case BatchAggregation.Sum: value = sum; break;
+                case BatchAggregation.Minimum: value = minimum; break;
+                case BatchAggregation.Maximum: value = maximum; break;
+                case BatchAggregation.Count: value = count; break;
+                default: value = sum / count; break;
+            }
+            return true;
+        }
+
+        public bool TryBatchSlotRead(double prefabHash, int slotIndex, int logicSlotType,
+                                     BatchAggregation aggregation, out double value) =>
+            AggregateSlot(GetBatch(), (int)prefabHash, nameHash: null, slotIndex,
+                          (LogicSlotType)logicSlotType, aggregation, out value);
+
+        public bool TryBatchNamedSlotRead(double prefabHash, double nameHash, int slotIndex,
+                                          int logicSlotType, BatchAggregation aggregation, out double value) =>
+            AggregateSlot(GetBatch(), (int)prefabHash, (int)nameHash, slotIndex,
+                          (LogicSlotType)logicSlotType, aggregation, out value);
+
+        /// <summary>
+        /// The slot half of <see cref="Aggregate"/>. A device that has no slot at that
+        /// index, or whose slot cannot answer that property, is skipped instead of
+        /// counting as a zero: a tray with no plant in it would otherwise drag an
+        /// average down, and 'count' would stop meaning "how many answered".
+        /// </summary>
+        private static bool AggregateSlot(List<ILogicable>? devices, int prefabHash, int? nameHash,
+                                          int slotIndex, LogicSlotType type,
+                                          BatchAggregation aggregation, out double value)
+        {
+            value = 0.0;
+            if (devices == null) return false;
+
+            double sum = 0.0;
+            double minimum = double.MaxValue;
+            double maximum = double.MinValue;
+            int count = 0;
+
+            for (int i = 0; i < devices.Count; i++)
+            {
+                var device = devices[i];
+                if (device == null) continue;
+
+                if (prefabHash != 0 && device.GetPrefabHash() != prefabHash) continue;
+                if (nameHash.HasValue && device.GetNameHash() != nameHash.Value) continue;
+                if (!device.CanLogicRead(type, slotIndex)) continue;
+
+                double reading = device.GetLogicValue(type, slotIndex);
+                sum += reading;
+                if (reading < minimum) minimum = reading;
+                if (reading > maximum) maximum = reading;
+                count++;
+            }
+
+            if (count == 0)
+            {
+                if (aggregation == BatchAggregation.Count) return true;
+
+                ReportEmptyBatch("slot read", "batch-slot-read-empty", devices.Count,
+                                 prefabHash, nameHash, "slot " + slotIndex + " " + type);
                 return false;
             }
 
@@ -217,7 +282,8 @@ namespace IZCode.Mod.Runtime
             }
 
             if (written == 0)
-                ReportEmptyBatch("write", "batch-write-empty", devices.Count, prefabHash, nameHash, type);
+                ReportEmptyBatch("write", "batch-write-empty", devices.Count, prefabHash, nameHash,
+                                 type.ToString());
 
             return written;
         }
@@ -232,14 +298,14 @@ namespace IZCode.Mod.Runtime
         /// network has devices, none matched) from wrong wiring (the network is empty).
         /// </summary>
         private static void ReportEmptyBatch(string operation, string throttleKey, int networkSize,
-                                             int prefabHash, int? nameHash, LogicType type)
+                                             int prefabHash, int? nameHash, string property)
         {
             if (!IZLog.IsOn(IZLogArea.Vm, IZLogLevel.Warn)) return;
 
             IZLog.Throttled(IZLogArea.Vm, IZLogLevel.Warn, throttleKey, 10f, () =>
                 "batch " + operation + " reached no device: prefab " + prefabHash +
                 (nameHash.HasValue ? " label " + nameHash.Value : string.Empty) +
-                " property " + type + "; the housing network has " + networkSize +
+                " property " + property + "; the housing network has " + networkSize +
                 " device(s). Check the prefab name and whether the equipment is on the " +
                 "same data network as the housing.");
         }

@@ -130,6 +130,31 @@ rather than a pin, and is refused. It is IC10's `sdse`.
 var q = chute.slot[0].Quantity;
 ```
 
+A slot is read on a batch as well, and there it behaves exactly like a batch
+property: the sequence of readings of every matched device that has that slot,
+collapsed by the same five terminals, and `.avg()` when none is written.
+
+```iz
+device trays = named(StructureHydroponicsAutomated, #"north");
+
+var anyRipe  = trays.slot[0].Mature.max();          // 1 as soon as one is ready
+var howMany  = trays.slot[0].Occupied.count();      // how many answered at all
+var ripeAvg  = all(StructureHydroponicsAutomated).slot[0].Mature;
+```
+
+This is the one way to watch the same slot on more devices than the housing has
+pins. A device that has no slot at that index, or whose slot cannot answer that
+property, is **skipped rather than counted as a zero**: an empty tray would
+otherwise drag an average down, and `count()` would stop meaning "how many
+answered".
+
+The difference from the pin form is what happens when the read finds nothing. A
+pin that is empty is a wiring mistake, and stops the chip. A selector that
+matches nothing is an ordinary answer, and reads `0` - the same as every other
+batch read.
+
+A slot is read only in both forms.
+
 ### 3.2 Hash literals
 
 `#"StructureWallLight"` produces the CRC32 of the prefab name at compile time,
@@ -276,12 +301,14 @@ The declaration costs nothing at runtime: the two hashes are folded when the
 name is declared, so `led.On = true` compiles to exactly what the inline
 `named(...)` form compiles to.
 
-Two things a pin can do that a selector cannot:
+One thing a pin can do that a selector cannot:
 
 | | pin | selector |
 |---|---|---|
 | `pump.Setting += 1` | yes | no - a batch has no single value to read back |
-| `chute.slot[0].Quantity` | yes | no - a slot belongs to one device |
+
+A slot works on both, and reads across the whole set on a selector - see
+[3.1](#31-slots).
 
 ---
 

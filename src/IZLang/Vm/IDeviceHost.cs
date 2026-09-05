@@ -58,6 +58,21 @@ namespace IZLang.Vm
                                BatchAggregation aggregation, out double value);
 
         int BatchNamedWrite(double prefabHash, double nameHash, int logicType, double value);
+
+        /// <summary>
+        /// The slot counterpart of <see cref="TryBatchRead"/>: reads slot
+        /// <paramref name="slotIndex"/> of every device the prefab matched and
+        /// collapses the readings with <paramref name="aggregation"/>.
+        ///
+        /// A device that has no such slot, or whose slot cannot answer that property,
+        /// is skipped rather than counted as a zero - the same treatment a device that
+        /// cannot read the property gets in the property batch.
+        /// </summary>
+        bool TryBatchSlotRead(double prefabHash, int slotIndex, int logicSlotType,
+                              BatchAggregation aggregation, out double value);
+
+        bool TryBatchNamedSlotRead(double prefabHash, double nameHash, int slotIndex,
+                                   int logicSlotType, BatchAggregation aggregation, out double value);
     }
 
     /// <summary>
@@ -149,6 +164,9 @@ namespace IZLang.Vm
             public int NameHash { get; }
             public Dictionary<int, double> Values { get; } = new Dictionary<int, double>();
 
+            /// <summary>Slot readings, keyed by slot index and LogicSlotType.</summary>
+            public Dictionary<long, double> SlotValues { get; } = new Dictionary<long, double>();
+
             public FakeDevice(int prefabHash, int nameHash)
             {
                 PrefabHash = prefabHash;
@@ -156,6 +174,16 @@ namespace IZLang.Vm
             }
 
             public double Get(int logicType) => Values.TryGetValue(logicType, out double v) ? v : 0.0;
+
+            public void SetSlot(int slotIndex, int logicSlotType, double value) =>
+                SlotValues[SlotEntry(slotIndex, logicSlotType)] = value;
+
+            /// <summary>false when this device has nothing to say about that slot.</summary>
+            public bool TryGetSlot(int slotIndex, int logicSlotType, out double value) =>
+                SlotValues.TryGetValue(SlotEntry(slotIndex, logicSlotType), out value);
+
+            private static long SlotEntry(int slotIndex, int logicSlotType) =>
+                ((long)slotIndex << 32) | (uint)logicSlotType;
         }
 
         public List<FakeDevice> Network { get; } = new List<FakeDevice>();
@@ -253,5 +281,44 @@ namespace IZLang.Vm
 
         public int BatchNamedWrite(double prefabHash, double nameHash, int logicType, double value) =>
             WriteMatching((int)prefabHash, (int)nameHash, logicType, value);
+
+        private bool AggregateSlot(int prefabHash, int? nameHash, int slotIndex, int logicSlotType,
+                                   BatchAggregation aggregation, out double value)
+        {
+            value = 0.0;
+            double sum = 0.0, minimum = double.MaxValue, maximum = double.MinValue;
+            int count = 0;
+
+            foreach (var device in Network)
+            {
+                if (!Matches(device, prefabHash, nameHash)) continue;
+                if (!device.TryGetSlot(slotIndex, logicSlotType, out double reading)) continue;
+
+                sum += reading;
+                if (reading < minimum) minimum = reading;
+                if (reading > maximum) maximum = reading;
+                count++;
+            }
+
+            if (count == 0) return aggregation == BatchAggregation.Count;
+
+            switch (aggregation)
+            {
+                case BatchAggregation.Sum: value = sum; break;
+                case BatchAggregation.Minimum: value = minimum; break;
+                case BatchAggregation.Maximum: value = maximum; break;
+                case BatchAggregation.Count: value = count; break;
+                default: value = sum / count; break;
+            }
+            return true;
+        }
+
+        public bool TryBatchSlotRead(double prefabHash, int slotIndex, int logicSlotType,
+                                     BatchAggregation aggregation, out double value) =>
+            AggregateSlot((int)prefabHash, null, slotIndex, logicSlotType, aggregation, out value);
+
+        public bool TryBatchNamedSlotRead(double prefabHash, double nameHash, int slotIndex,
+                                          int logicSlotType, BatchAggregation aggregation, out double value) =>
+            AggregateSlot((int)prefabHash, (int)nameHash, slotIndex, logicSlotType, aggregation, out value);
     }
 }

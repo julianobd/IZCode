@@ -22,6 +22,7 @@ namespace IZLang.Tests
         private const int LogicOn = 28;
         private const int LogicSetting = 12;
         private const int LogicPressure = 5;
+        private const int SlotQuantity = 3;
 
         private static readonly int DiodeHash = PrefabHash.Compute("StructureDiode");
         private static readonly int PumpHash = PrefabHash.Compute("StructureVolumePump");
@@ -370,13 +371,156 @@ namespace IZLang.Tests
                 IZErrorCode.InvalidAssignmentTarget);
         }
 
+        // ------------------------------------------------------------------
+        //  Slots across a batch
+        // ------------------------------------------------------------------
+
         [Fact]
-        public void ABatchDeviceHasNoSlots()
+        public void ABatchDeviceReadsASlotAcrossEveryDeviceItMatched()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+            host.AddNetworkDevice(LightHash).SetSlot(0, SlotQuantity, 10);
+            host.AddNetworkDevice(LightHash).SetSlot(0, SlotQuantity, 20);
+
+            RunOn(host,
+                "device bins = all(StructureWallLight);\n" +
+                "device out = d0;\n" +
+                "fn main() { out.Setting = bins.slot[0].Quantity; }\n");
+
+            Assert.Equal(15.0, host.Get(0, LogicSetting));      // the average, as a bare batch read is
+        }
+
+        [Fact]
+        public void AnInlineSelectorReadsASlotToo()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+            host.AddNetworkDevice(LightHash).SetSlot(2, SlotQuantity, 7);
+
+            RunOn(host,
+                "device out = d0;\n" +
+                "fn main() { out.Setting = all(StructureWallLight).slot[2].Quantity; }\n");
+
+            Assert.Equal(7.0, host.Get(0, LogicSetting));
+        }
+
+        [Fact]
+        public void ANamedSelectorNarrowsTheSlotReadToItsLabel()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+            host.AddNetworkDevice(LightHash, PrefabHash.Compute("north")).SetSlot(0, SlotQuantity, 4);
+            host.AddNetworkDevice(LightHash, PrefabHash.Compute("south")).SetSlot(0, SlotQuantity, 100);
+
+            RunOn(host,
+                "device out = d0;\n" +
+                "fn main() { out.Setting = named(StructureWallLight, \"north\").slot[0].Quantity; }\n");
+
+            Assert.Equal(4.0, host.Get(0, LogicSetting));
+        }
+
+        [Fact]
+        public void TheFiveTerminalsWorkOnASlotRead()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+            host.Connect(1);
+            host.Connect(2);
+            host.Connect(3);
+            host.AddNetworkDevice(LightHash).SetSlot(0, SlotQuantity, 2);
+            host.AddNetworkDevice(LightHash).SetSlot(0, SlotQuantity, 8);
+
+            RunOn(host,
+                "device bins = all(StructureWallLight);\n" +
+                "device a = d0; device b = d1; device c = d2; device e = d3;\n" +
+                "fn main() {\n" +
+                "    a.Setting = bins.slot[0].Quantity.sum();\n" +
+                "    b.Setting = bins.slot[0].Quantity.min();\n" +
+                "    c.Setting = bins.slot[0].Quantity.max();\n" +
+                "    e.Setting = bins.slot[0].Quantity.count();\n" +
+                "}\n");
+
+            Assert.Equal(10.0, host.Get(0, LogicSetting));
+            Assert.Equal(2.0, host.Get(1, LogicSetting));
+            Assert.Equal(8.0, host.Get(2, LogicSetting));
+            Assert.Equal(2.0, host.Get(3, LogicSetting));
+        }
+
+        [Fact]
+        public void ADeviceWithoutThatSlotIsSkippedRatherThanCountedAsZero()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+            host.Connect(1);
+            host.AddNetworkDevice(LightHash).SetSlot(0, SlotQuantity, 6);
+            host.AddNetworkDevice(LightHash);                     // no slot 0 at all
+
+            RunOn(host,
+                "device bins = all(StructureWallLight);\n" +
+                "device out = d0; device n = d1;\n" +
+                "fn main() {\n" +
+                "    out.Setting = bins.slot[0].Quantity;\n" +
+                "    n.Setting = bins.slot[0].Quantity.count();\n" +
+                "}\n");
+
+            Assert.Equal(6.0, host.Get(0, LogicSetting));         // not 3, which a phantom zero would give
+            Assert.Equal(1.0, host.Get(1, LogicSetting));
+        }
+
+        [Fact]
+        public void ASlotReadThatMatchesNothingIsZeroRatherThanAnError()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+
+            RunOn(host,
+                "device out = d0;\n" +
+                "fn main() { out.Setting = all(StructureWallLight).slot[0].Quantity; }\n");
+
+            Assert.Equal(0.0, host.Get(0, LogicSetting));
+        }
+
+        [Fact]
+        public void TheSlotIndexMayBeComputed()
+        {
+            var host = new MemoryDeviceHost();
+            host.Connect(0);
+            host.AddNetworkDevice(LightHash).SetSlot(3, SlotQuantity, 42);
+
+            RunOn(host,
+                "device bins = all(StructureWallLight);\n" +
+                "device out = d0;\n" +
+                "fn main() { var i = 1; out.Setting = bins.slot[i + 2].Quantity; }\n");
+
+            Assert.Equal(42.0, host.Get(0, LogicSetting));
+        }
+
+        [Fact]
+        public void ASlotIsStillReadOnlyOnABatch()
         {
             TestHost.CompileError(
-                "device chutes = all(StructureChuteBin);\n" +
-                "fn main() { var q = chutes.slot[0].Quantity; }\n",
-                IZErrorCode.NotADevice);
+                "device bins = all(StructureChuteBin);\n" +
+                "fn main() { bins.slot[0].Quantity = 1; }\n",
+                IZErrorCode.InvalidAssignmentTarget);
+        }
+
+        [Fact]
+        public void ATerminalIsStillRefusedOnAPinSlot()
+        {
+            TestHost.CompileError(
+                "device chute = d0;\n" +
+                "fn main() { var q = chute.slot[0].Quantity.sum(); }\n",
+                IZErrorCode.TypeMismatch);
+        }
+
+        [Fact]
+        public void AnUnknownSlotPropertyIsStillCaughtOnABatch()
+        {
+            TestHost.CompileError(
+                "device bins = all(StructureChuteBin);\n" +
+                "fn main() { var q = bins.slot[0].Nonsense; }\n",
+                IZErrorCode.UnknownLogicType);
         }
 
         [Fact]
